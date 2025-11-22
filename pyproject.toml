@@ -6,10 +6,12 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "azure-identity>=1.25.1",
+    "azure-mgmt-monitor>=6.0.0",
     "azure-monitor-query>=2.0.0",
     "fastapi>=0.121.3",
     "langchain>=1.0.8",
     "langchain-ollama>=1.0.0",
+    "langgraph>=0.2.0",
     "uvicorn>=0.38.0",
 ]
 
