@@ -20,4 +20,6 @@ dependencies = [
 dev = [
     "requests>=2.32.5",
     "ruff>=0.14.6",
+    "aiohttp>=3.9.0",
+    "opencensus-ext-azure>=1.1.13",
 ]

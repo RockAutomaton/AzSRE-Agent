@@ -10,9 +10,7 @@ MAX_RESOURCE_NAME_LENGTH = 256
 
 class KQLTemplate(Enum):
     CONTAINER_LOGS = "container_logs"
-    # Replaced generic APP_FAILURES with specialized analytical queries
-    APP_IMPACT_ANALYSIS = "app_impact_analysis" 
-    APP_PATTERNS = "app_patterns"
+    UNIFIED_DIAGNOSTICS = "unified_diagnostics"
     DEPENDENCY_FAILURES = "dependency_failures"
     SQL_ERRORS = "sql_errors"
 
@@ -22,45 +20,40 @@ TEMPLATES = {
     # Standard Azure Monitor table for Container Apps
     KQLTemplate.CONTAINER_LOGS: """
         ContainerAppConsoleLogs
-        | where TimeGenerated > ago(1h)
         | where ContainerAppName has {resource_name}
         | project TimeGenerated, ContainerAppName, Log_s
         | top 20 by TimeGenerated desc
     """,
     
-    # STRATEGY: Signal vs Noise (Section 5.1 & 8.2)
-    # Distinguishes "loud" errors (retry loops) from "wide" errors (systemic).
-    # Uses OperationId instead of User_Id to be schema-safe (works even if user tracking is off).
-    KQLTemplate.APP_IMPACT_ANALYSIS: """
-        AppExceptions
-        | where TimeGenerated > ago(24h)
-        | where AppRoleName has {resource_name}
-        | summarize 
-            RawCount = count(), 
-            DistinctOps = dcount(OperationId),
-            MostRecent = max(TimeGenerated),
-            ExampleMessage = any(OuterMessage)
-            by ProblemId, OuterType, OuterMethod
-        | extend SignalToNoiseRatio = DistinctOps * 1.0 / RawCount
-        | order by DistinctOps desc
-        | top 10 by DistinctOps desc
+    # NEW: Modern Unified Telemetry Query (Strict Workspace Schema)
+    # Unions App* tables. 
+    # Note: Time filtering is handled by the API client's 'timespan' parameter, not in KQL.
+    KQLTemplate.UNIFIED_DIAGNOSTICS: """
+        union isfuzzy=true 
+            (AppRequests | extend Type="Request"),
+            (AppExceptions | extend Type="Exception"),
+            (AppDependencies | extend Type="Dependency"),
+            (AppTraces | extend Type="Trace"),
+            (AppPageViews | extend Type="PageView"),
+            (AppAvailabilityResults | extend Type="Availability"),
+            (AppEvents | extend Type="Event")
+        | extend 
+            RoleName = column_ifexists("AppRoleName", ""),
+            Msg = coalesce(column_ifexists("OuterMessage", ""), column_ifexists("Message", ""), column_ifexists("Name", "")),
+            ResCode = column_ifexists("ResultCode", ""),
+            Dur = column_ifexists("DurationMs", 0.0),
+            OpId = column_ifexists("OperationId", "")
+        | where RoleName has {resource_name}
+        | order by TimeGenerated desc
+        | take 100
+        | project TimeGenerated, Type, Role=RoleName, Message=Msg, ResultCode=ResCode, DurationMs=Dur, OperationId=OpId
     """,
 
-    # STRATEGY: Machine Learning / Pattern Mining (Section 6.1)
-    # Uses autocluster to find common attributes in failed requests (e.g., specific browsers, OS, or cities)
-    KQLTemplate.APP_PATTERNS: """
-        AppRequests
-        | where TimeGenerated > ago(24h)
-        | where Success == false and AppRoleName has {resource_name}
-        | project ResultCode, Url, ClientCity, ClientOS, ClientBrowser
-        | evaluate autocluster()
-    """,
-
-    # STRATEGY: Correlation (Section 9.1)
-    # Joins Requests with Dependencies to find the downstream root cause of 5xx errors.
+    # STRATEGY: Correlation
+    # Strict Workspace schema for joining Requests and Dependencies.
     KQLTemplate.DEPENDENCY_FAILURES: """
         AppRequests
-        | where TimeGenerated > ago(1h) and Success == false and ResultCode startswith "5"
+        | where Success == false
         | where AppRoleName has {resource_name}
         | project OperationId, RequestResult = ResultCode, RequestTime = TimeGenerated
         | join kind=inner (
@@ -75,7 +68,6 @@ TEMPLATES = {
     # Azure Diagnostics for SQL (Standard Table)
     KQLTemplate.SQL_ERRORS: """
         AzureDiagnostics
-        | where TimeGenerated > ago(1h)
         | where Resource has {resource_name}
         | where Category == "SQLErrors" or Category == "Timeouts"
         | project TimeGenerated, error_number_d, Message
@@ -125,17 +117,15 @@ def get_template(template_key: str, resource_name: str) -> str:
         key = KQLTemplate(template_key.lower())
     except ValueError:
         # Fallback mapping for old keys or fuzzy matching
-        if "impact" in template_key.lower():
-            key = KQLTemplate.APP_IMPACT_ANALYSIS
-        elif "pattern" in template_key.lower():
-            key = KQLTemplate.APP_PATTERNS
+        if "unified" in template_key.lower() or "impact" in template_key.lower():
+            key = KQLTemplate.UNIFIED_DIAGNOSTICS
         elif "depend" in template_key.lower():
             key = KQLTemplate.DEPENDENCY_FAILURES
         elif "sql" in template_key.lower():
             key = KQLTemplate.SQL_ERRORS
         else:
-            # Default to Impact Analysis for generic "App" requests
-            key = KQLTemplate.APP_IMPACT_ANALYSIS
+            # Default to Unified Diagnostics for generic "App" requests
+            key = KQLTemplate.UNIFIED_DIAGNOSTICS
 
     template = TEMPLATES.get(key)
     
