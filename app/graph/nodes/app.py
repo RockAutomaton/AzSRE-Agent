@@ -27,8 +27,21 @@ async def app_node(state: AgentState) -> AgentState:
     print("--- APP NODE: Checking App Insights (Templated) ---")
     alert = state["alert_data"]
     
-    resource_id = alert.essentials.alertTargetIDs[0] if alert.essentials.alertTargetIDs else "Unknown"
-    resource_name = resource_id.split("/")[-1] if "/" in resource_id else resource_id
+    # Safely extract resource_id with validation
+    resource_id = "Unknown"
+    if (hasattr(alert.essentials, 'alertTargetIDs') and 
+        alert.essentials.alertTargetIDs and 
+        len(alert.essentials.alertTargetIDs) > 0 and
+        isinstance(alert.essentials.alertTargetIDs[0], str) and
+        alert.essentials.alertTargetIDs[0].strip()):
+        resource_id = alert.essentials.alertTargetIDs[0]
+    
+    # Safely extract resource_name using rsplit
+    if isinstance(resource_id, str) and "/" in resource_id:
+        parts = resource_id.rsplit("/", maxsplit=1)
+        resource_name = parts[-1] if parts and parts[-1] else "Unknown"
+    else:
+        resource_name = resource_id if isinstance(resource_id, str) and resource_id else "Unknown"
 
     # 1. Get Template
     query = get_template("app_exceptions", resource_name)

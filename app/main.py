@@ -2,8 +2,10 @@
 from dotenv import load_dotenv
 load_dotenv()
 
+import logging
+import traceback
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from langchain_ollama import ChatOllama
@@ -13,6 +15,9 @@ from langchain_core.output_parsers import StrOutputParser
 from app.schemas import AzureWebhookPayload
 from app.graph.workflow import build_graph
 from app.graph.state import AgentState
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 # 1. Initialize the FastAPI App
 app = FastAPI(title="Azure Alert Agent")
@@ -25,7 +30,15 @@ llm = ChatOllama(
 )
 
 # 3. Initialize the workflow graph
-graph = build_graph()
+try:
+    graph = build_graph()
+except Exception as e:
+    logger.error(
+        f"Failed to initialize workflow graph: {str(e)}\n"
+        f"Traceback:\n{traceback.format_exc()}",
+        exc_info=True
+    )
+    graph = None
 
 # 4. Define the Chain
 # We create a simple prompt -> LLM -> String parser pipeline
@@ -49,6 +62,14 @@ async def azure_webhook(payload: AzureWebhookPayload):
     """
     Receives Azure Monitor alerts and processes them through the agent workflow.
     """
+    # Verify graph is initialized before any graph-dependent logic
+    if graph is None:
+        logger.error("Workflow graph not initialized - cannot process alert")
+        raise HTTPException(
+            status_code=503,
+            detail="workflow graph not initialized"
+        )
+    
     # Initialize state
     initial_state: AgentState = {
         "alert_data": payload.data,

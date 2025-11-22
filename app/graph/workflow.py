@@ -8,6 +8,20 @@ from app.graph.nodes.reporter import reporter_node
 from app.graph.nodes.verify import verify_node
 
 
+def network_placeholder_node(state: AgentState) -> AgentState:
+    """Placeholder node for network investigation pending implementation.
+    
+    Returns consistent state structure matching other specialist nodes,
+    including investigation_result and status fields for downstream routing.
+    """
+    return {
+        "investigation_steps": state["investigation_steps"] + ["Network investigation skipped (pending implementation)"],
+        "final_report": "Network investigation pending implementation",
+        "investigation_result": "Network investigation pending implementation",
+        "status": "skipped"
+    }
+
+
 def build_graph():
     workflow = StateGraph(AgentState)
 
@@ -16,8 +30,7 @@ def build_graph():
     workflow.add_node("investigate_infra", infra_node)
     workflow.add_node("investigate_db", db_node)
     workflow.add_node("investigate_app", app_node)
-    # Placeholders
-    workflow.add_node("investigate_network", lambda state: {"final_report": "Network skipped"})
+    workflow.add_node("investigate_network", network_placeholder_node)
     
     workflow.add_node("verify", verify_node)
     workflow.add_node("reporter", reporter_node)
