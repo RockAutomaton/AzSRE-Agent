@@ -5,28 +5,25 @@ from app.graph.nodes.infra import infra_node
 from app.graph.nodes.database import db_node
 from app.graph.nodes.app import app_node
 from app.graph.nodes.reporter import reporter_node
+from app.graph.nodes.verify import verify_node
 
 
 def build_graph():
     workflow = StateGraph(AgentState)
 
-    # 1. Add Nodes
+    # Nodes
     workflow.add_node("triage", triage_node)
     workflow.add_node("investigate_infra", infra_node)
     workflow.add_node("investigate_db", db_node)
     workflow.add_node("investigate_app", app_node)
+    # Placeholders
+    workflow.add_node("investigate_network", lambda state: {"final_report": "Network skipped"})
     
-    # Placeholder for network still
-    async def network_placeholder(state: AgentState) -> AgentState:
-        return {
-            "investigation_steps": state.get("investigation_steps", []) + ["Network investigation placeholder"],
-            "final_report": "Network check skipped."
-        }
-    workflow.add_node("investigate_network", network_placeholder)
+    workflow.add_node("verify", verify_node)
     workflow.add_node("reporter", reporter_node)
 
-    # 2. Define Routing
-    def route_alert(state: AgentState) -> str:
+    # Routing Logic
+    def route_alert(state: AgentState):
         cat = state.get("classification", "")
         if not cat:
             # Fallback to alert rule analysis if classification not set
@@ -47,9 +44,9 @@ def build_graph():
             return "investigate_network"
         return "investigate_app"
 
-    # 3. Build Edges
     workflow.set_entry_point("triage")
     
+    # Triage -> Specialist
     workflow.add_conditional_edges(
         "triage",
         route_alert,
@@ -61,14 +58,16 @@ def build_graph():
         }
     )
     
-    # 4. Fan-in to Reporter (Instead of END)
-    workflow.add_edge("investigate_infra", "reporter")
-    workflow.add_edge("investigate_db", "reporter")
-    workflow.add_edge("investigate_app", "reporter")
-    workflow.add_edge("investigate_network", "reporter")
+    # Specialist -> Verify (Fan In)
+    workflow.add_edge("investigate_infra", "verify")
+    workflow.add_edge("investigate_db", "verify")
+    workflow.add_edge("investigate_app", "verify")
+    workflow.add_edge("investigate_network", "verify")
     
-    # 5. Final End
+    # Verify -> Reporter
+    workflow.add_edge("verify", "reporter")
+    
+    # Reporter -> End
     workflow.add_edge("reporter", END)
 
     return workflow.compile()
-

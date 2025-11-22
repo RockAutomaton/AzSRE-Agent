@@ -2,13 +2,13 @@
   "schemaId": "azureMonitorCommonAlertSchema",
   "data": {
     "essentials": {
-      "alertId": "/subscriptions/123/providers/Microsoft.Alerts/alerts/123",
+      "alertId": "/subscriptions/ccbc54ce-61f8-463d-b05f-a05d625c3567/providers/Microsoft.Alerts/alerts/123",
       "alertRule": "High CPU Usage - Container App",
       "severity": "Sev1",
       "signalType": "Metric",
       "monitorCondition": "Fired",
       "monitoringService": "Platform",
-      "alertTargetIDs": ["/subscriptions/123/resourceGroups/rg/providers/Microsoft.App/containerApps/my-app"],
+      "alertTargetIDs": ["/subscriptions/ccbc54ce-61f8-463d-b05f-a05d625c3567/resourceGroups/ai-agent-poc-rg/providers/Microsoft.App/containerApps/nuffin"],
       "firedDateTime": "2024-01-01T12:00:00.000Z",
       "essentialsVersion": "1.0",
       "alertContextVersion": "1.0"

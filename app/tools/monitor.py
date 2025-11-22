@@ -26,24 +26,34 @@ class AzureLogTool:
             )
 
             if response.status == LogsQueryStatus.PARTIAL:
-                error = response.partial_error
-                return f"Partial Error: {error.message}"
+                return f"Partial Error: {response.partial_error.message}"
             
             if response.status == LogsQueryStatus.FAILURE:
                 return f"Query Failed: {response.status}"
 
-            # Format results into a readable string for the LLM
+            if not response.tables:
+                return "No tables returned"
+
             table = response.tables[0]
             results = []
-            columns = [col.name for col in table.columns]
+            
+            # FIX: Handle cases where columns are strings vs objects
+            columns = []
+            for col in table.columns:
+                if hasattr(col, 'name'):
+                    columns.append(col.name)
+                else:
+                    columns.append(str(col))
             
             for row in table.rows:
                 # Create a compact dict for each row
                 row_dict = dict(zip(columns, row))
                 results.append(str(row_dict))
 
-            return "\n".join(results[:10])  # Limit to 10 rows to save context window
+            if not results:
+                return "No logs found."
+
+            return "\n".join(results[:10])
 
         except Exception as e:
             return f"Execution Error: {str(e)}"
-

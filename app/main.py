@@ -1,3 +1,7 @@
+# Load environment variables from .env file first
+from dotenv import load_dotenv
+load_dotenv()
+
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
@@ -6,17 +10,24 @@ from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
+from app.schemas import AzureWebhookPayload
+from app.graph.workflow import build_graph
+from app.graph.state import AgentState
+
 # 1. Initialize the FastAPI App
-app = FastAPI(title="Azure Alert Agent (Simple)")
+app = FastAPI(title="Azure Alert Agent")
 
 # 2. Setup the Local LLM (Ollama)
 # We use the model you selected in the plan: MiniCPM-V or Qwen
 llm = ChatOllama(
-    model="qwen3-vl:4b",
+    model="gemma3:27b",
     temperature=0,  # Keep it deterministic for alerts
 )
 
-# 3. Define the Chain
+# 3. Initialize the workflow graph
+graph = build_graph()
+
+# 4. Define the Chain
 # We create a simple prompt -> LLM -> String parser pipeline
 prompt = ChatPromptTemplate.from_messages(
     [
@@ -27,12 +38,37 @@ prompt = ChatPromptTemplate.from_messages(
 chain = prompt | llm | StrOutputParser()
 
 
-# 4. Define Input Data Model
+# 5. Define Input Data Model
 class ChatRequest(BaseModel):
     message: str
 
 
-# 5. Standard Endpoint (Waits for full response)
+# 6. Azure Webhook Endpoint
+@app.post("/webhook/azure")
+async def azure_webhook(payload: AzureWebhookPayload):
+    """
+    Receives Azure Monitor alerts and processes them through the agent workflow.
+    """
+    # Initialize state
+    initial_state: AgentState = {
+        "alert_data": payload.data,
+        "investigation_steps": [],
+        "final_report": None,
+        "classification": None,
+    }
+    
+    # Run the workflow
+    final_state = await graph.ainvoke(initial_state)
+    
+    # Return the results
+    return {
+        "classification": final_state.get("classification", "UNKNOWN"),
+        "report": final_state.get("final_report", "No report generated"),
+        "steps": final_state.get("investigation_steps", []),
+    }
+
+
+# 7. Standard Endpoint (Waits for full response)
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
     """
@@ -43,7 +79,7 @@ async def chat_endpoint(request: ChatRequest):
     return {"response": response}
 
 
-# 6. Streaming Endpoint (Real-time chunks)
+# 8. Streaming Endpoint (Real-time chunks)
 @app.post("/stream")
 async def stream_endpoint(request: ChatRequest):
     """
@@ -59,7 +95,7 @@ async def stream_endpoint(request: ChatRequest):
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
-# 7. Run the Server
+# 9. Run the Server
 if __name__ == "__main__":
     # Run with: python main.py
     uvicorn.run(app, host="0.0.0.0", port=8000)
