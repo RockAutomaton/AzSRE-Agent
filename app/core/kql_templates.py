@@ -10,13 +10,16 @@ MAX_RESOURCE_NAME_LENGTH = 256
 
 class KQLTemplate(Enum):
     CONTAINER_LOGS = "container_logs"
-    APP_FAILURES = "app_failures"  # Renamed from APP_EXCEPTIONS
+    # Replaced generic APP_FAILURES with specialized analytical queries
+    APP_IMPACT_ANALYSIS = "app_impact_analysis" 
+    APP_PATTERNS = "app_patterns"
+    DEPENDENCY_FAILURES = "dependency_failures"
     SQL_ERRORS = "sql_errors"
 
 
 # Templates using placeholders that will be replaced with sanitized and escaped values
 TEMPLATES = {
-    # Standard Azure Monitor table for Container Apps (No _CL suffix)
+    # Standard Azure Monitor table for Container Apps
     KQLTemplate.CONTAINER_LOGS: """
         ContainerAppConsoleLogs
         | where TimeGenerated > ago(1h)
@@ -25,41 +28,51 @@ TEMPLATES = {
         | top 20 by TimeGenerated desc
     """,
     
-    # UPGRADED: Comprehensive Application Failure View
-    # Combines Crashes (Exceptions), HTTP Failures (Requests), and Error Logs (Traces)
-    KQLTemplate.APP_FAILURES: """
-        union 
-            (AppExceptions 
-             | where TimeGenerated > ago(1h)
-             | project TimeGenerated, Type='Crash', Message=OuterMessage, Details=Method, AppRoleName),
-            (AppRequests 
-             | where TimeGenerated > ago(1h) and Success == false 
-             | project TimeGenerated, Type='HTTP Failure', Message=strcat(ResultCode, ' - ', Url), Details=Name, AppRoleName),
-            (AppTraces 
-             | where TimeGenerated > ago(1h) and SeverityLevel >= 3 
-             | project TimeGenerated, Type='Error Log', Message=Message, Details=OperationName, AppRoleName)
+    # STRATEGY: Signal vs Noise (Section 5.1 & 8.2)
+    # Distinguishes "loud" errors (retry loops) from "wide" errors (systemic).
+    # Uses OperationId instead of User_Id to be schema-safe (works even if user tracking is off).
+    KQLTemplate.APP_IMPACT_ANALYSIS: """
+        AppExceptions
+        | where TimeGenerated > ago(24h)
         | where AppRoleName has {resource_name}
-        | top 20 by TimeGenerated desc
+        | summarize 
+            RawCount = count(), 
+            DistinctOps = dcount(OperationId),
+            MostRecent = max(TimeGenerated),
+            ExampleMessage = any(OuterMessage)
+            by ProblemId, OuterType, OuterMethod
+        | extend SignalToNoiseRatio = DistinctOps * 1.0 / RawCount
+        | order by DistinctOps desc
+        | top 10 by DistinctOps desc
     """,
-    
-    # App Insights Failures - for Unknown resource (empty/missing AppRoleName)
-    "APP_FAILURES_UNKNOWN": """
-        union 
-            (AppExceptions 
-             | where TimeGenerated > ago(1h)
-             | project TimeGenerated, Type='Crash', Message=OuterMessage, Details=Method, AppRoleName),
-            (AppRequests 
-             | where TimeGenerated > ago(1h) and Success == false 
-             | project TimeGenerated, Type='HTTP Failure', Message=strcat(ResultCode, ' - ', Url), Details=Name, AppRoleName),
-            (AppTraces 
-             | where TimeGenerated > ago(1h) and SeverityLevel >= 3 
-             | project TimeGenerated, Type='Error Log', Message=Message, Details=OperationName, AppRoleName)
-        | where isempty(AppRoleName)
-        | top 20 by TimeGenerated desc
+
+    # STRATEGY: Machine Learning / Pattern Mining (Section 6.1)
+    # Uses autocluster to find common attributes in failed requests (e.g., specific browsers, OS, or cities)
+    KQLTemplate.APP_PATTERNS: """
+        AppRequests
+        | where TimeGenerated > ago(24h)
+        | where Success == false and AppRoleName has {resource_name}
+        | project ResultCode, Url, ClientCity, ClientOS, ClientBrowser
+        | evaluate autocluster()
+    """,
+
+    # STRATEGY: Correlation (Section 9.1)
+    # Joins Requests with Dependencies to find the downstream root cause of 5xx errors.
+    KQLTemplate.DEPENDENCY_FAILURES: """
+        AppRequests
+        | where TimeGenerated > ago(1h) and Success == false and ResultCode startswith "5"
+        | where AppRoleName has {resource_name}
+        | project OperationId, RequestResult = ResultCode, RequestTime = TimeGenerated
+        | join kind=inner (
+            AppDependencies
+            | where Success == false
+            | project OperationId, DependencyType = Type, DependencyTarget = Target, DependencyResult = ResultCode
+        ) on OperationId
+        | summarize count() by RequestResult, DependencyType, DependencyTarget, DependencyResult
+        | top 10 by count_ desc
     """,
 
     # Azure Diagnostics for SQL (Standard Table)
-    # Filters for SQL Errors and Timeouts specifically
     KQLTemplate.SQL_ERRORS: """
         AzureDiagnostics
         | where TimeGenerated > ago(1h)
@@ -74,132 +87,65 @@ TEMPLATES = {
 def sanitize_resource_name(resource_name: str) -> str:
     """
     Sanitizes and validates resource name input to prevent KQL injection.
-    
-    Uses a whitelist approach: allows only alphanumerics, spaces, dashes,
-    underscores, dots, and forward slashes (for resource paths).
-    
-    Rejects inputs containing dangerous characters:
-    - Newlines (\\n, \\r)
-    - Pipe characters (|)
-    - Backslashes (\\)
-    - Comment tokens (//, /*, */)
-    
-    Args:
-        resource_name: The resource name to sanitize
-        
-    Returns:
-        Sanitized resource name (same as input if valid)
-        
-    Raises:
-        ValueError: If the input is empty, too long, or contains invalid/dangerous characters
     """
     if not resource_name:
         logger.warning("KQL sanitization rejected: empty resource name")
         raise ValueError("Resource name cannot be empty")
     
-    # Check length limit
     if len(resource_name) > MAX_RESOURCE_NAME_LENGTH:
-        logger.warning(
-            f"KQL sanitization rejected: resource name too long "
-            f"(length: {len(resource_name)}, max: {MAX_RESOURCE_NAME_LENGTH}): {resource_name[:50]}..."
-        )
-        raise ValueError(
-            f"Resource name exceeds maximum length of {MAX_RESOURCE_NAME_LENGTH} characters"
-        )
+        raise ValueError(f"Resource name exceeds maximum length of {MAX_RESOURCE_NAME_LENGTH}")
     
-    # Check for dangerous characters that could be used for injection
-    dangerous_chars = ['\n', '\r', '|', '\\']
-    for char in dangerous_chars:
-        if char in resource_name:
-            log_value = resource_name[:100] + "..." if len(resource_name) > 100 else resource_name
-            logger.warning(
-                f"KQL sanitization rejected: resource name contains dangerous character '{char}': {log_value}"
-            )
-            raise ValueError(
-                f"Resource name contains dangerous character '{char}'. "
-                f"Only alphanumerics, spaces, dashes (-), underscores (_), dots (.), and forward slashes (/) are allowed."
-            )
-    
-    # Check for comment tokens
-    comment_tokens = ['//', '/*', '*/']
-    for token in comment_tokens:
+    # Dangerous chars and comment tokens
+    dangerous_tokens = ['\n', '\r', '|', '\\', '//', '/*', '*/']
+    for token in dangerous_tokens:
         if token in resource_name:
-            log_value = resource_name[:100] + "..." if len(resource_name) > 100 else resource_name
-            logger.warning(
-                f"KQL sanitization rejected: resource name contains comment token '{token}': {log_value}"
-            )
-            raise ValueError(
-                f"Resource name contains comment token '{token}'. "
-                f"Only alphanumerics, spaces, dashes (-), underscores (_), dots (.), and forward slashes (/) are allowed."
-            )
+            raise ValueError(f"Resource name contains dangerous token '{token}'")
     
-    # Whitelist validation: only allow alphanumerics, spaces, dashes, underscores, dots, and forward slashes
+    # Whitelist validation
     whitelist_pattern = re.compile(r'^[a-zA-Z0-9._\s/-]+$')
     if not whitelist_pattern.match(resource_name):
-        # Log the rejected input for debugging (truncate if too long)
-        log_value = resource_name[:100] + "..." if len(resource_name) > 100 else resource_name
-        logger.warning(
-            f"KQL sanitization rejected: resource name contains invalid characters: {log_value}"
-        )
-        raise ValueError(
-            f"Resource name contains invalid characters. "
-            f"Only alphanumerics, spaces, dashes (-), underscores (_), dots (.), and forward slashes (/) are allowed."
-        )
+        raise ValueError("Resource name contains invalid characters.")
     
     return resource_name
 
 
 def get_template(template_key: str, resource_name: str) -> str:
     """
-    Returns the rendered KQL query with strong input sanitization to prevent injection.
-    Handles "Unknown" resource_name by using a query that filters for empty/missing AppRoleName.
-    
-    Inputs are validated using a whitelist approach and sanitized before being used.
-    The sanitized value is properly escaped for KQL string literals (double quotes).
-    
-    Note: The Azure Monitor Query client doesn't support separate parameter passing,
-    so we use strong sanitization + proper escaping instead of parameterized queries.
+    Returns the rendered KQL query with strong input sanitization.
     """
-    # Handle "Unknown" resource_name case before template selection
-    # This prevents the WHERE clause from always being true
-    if resource_name.lower() == "unknown":
-        # For APP_FAILURES, use the template that filters for empty AppRoleName
-        if "app" in template_key.lower():
-            return TEMPLATES.get("APP_FAILURES_UNKNOWN", "").strip()
-        # For other templates, we may want to handle Unknown differently
-        # For now, we'll still use the regular template but the caller should be aware
-    
-    # Sanitize and validate resource name before use
+    # Sanitize first
     try:
         sanitized_resource = sanitize_resource_name(resource_name)
     except ValueError as e:
-        logger.error(f"KQL template generation failed due to invalid resource name: {e}")
+        logger.error(f"KQL template generation failed: {e}")
         raise
     
-    # Normalize key to match Enum
+    # Lookup Enum
     try:
-        # Handle case-insensitive string lookup to Enum
         key = KQLTemplate(template_key.lower())
     except ValueError:
-        # Fallback logic if the agent guesses a slightly wrong name
-        if "container" in template_key.lower():
-            key = KQLTemplate.CONTAINER_LOGS
-        elif "app" in template_key.lower():
-            key = KQLTemplate.APP_FAILURES
+        # Fallback mapping for old keys or fuzzy matching
+        if "impact" in template_key.lower():
+            key = KQLTemplate.APP_IMPACT_ANALYSIS
+        elif "pattern" in template_key.lower():
+            key = KQLTemplate.APP_PATTERNS
+        elif "depend" in template_key.lower():
+            key = KQLTemplate.DEPENDENCY_FAILURES
         elif "sql" in template_key.lower():
             key = KQLTemplate.SQL_ERRORS
         else:
-            key = KQLTemplate.CONTAINER_LOGS  # Default to Container
+            # Default to Impact Analysis for generic "App" requests
+            key = KQLTemplate.APP_IMPACT_ANALYSIS
 
     template = TEMPLATES.get(key)
     
-    # Properly escape the sanitized value for KQL string literals
-    # KQL uses double quotes for string literals, and escapes them by doubling
+    # Escape for KQL
     escaped_resource = sanitized_resource.replace('"', '""')
-    # Wrap in double quotes for the KQL 'has' operator
     escaped_value = f'"{escaped_resource}"'
     
-    # Replace the placeholder with the escaped value
+    # Handle "Unknown" resource case specifically for Application Insights tables
+    if resource_name.lower() == "unknown":
+        escaped_value = '""' # Look for empty strings if unknown, or remove filter
+
     query = template.format(resource_name=escaped_value).strip()
-    
     return query
