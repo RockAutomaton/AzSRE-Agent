@@ -7,10 +7,16 @@ from pathlib import Path
 
 # Configuration
 API_URL = "http://localhost:8000/webhook/azure"
-MOCK_FILE = Path(__file__).parent.parent / "tests" / "mock_payload.json"
 
 
 def trigger_simulation():
+    # Allow overriding the mock file via command line arg
+    filename = "mock_payload.json"
+    if len(sys.argv) > 1:
+        filename = sys.argv[1]
+
+    MOCK_FILE = Path(__file__).parent.parent / "tests" / filename
+    
     print(f"🚀 Loading mock alert from: {MOCK_FILE}")
     
     if not MOCK_FILE.exists():
@@ -38,46 +44,23 @@ def trigger_simulation():
     
     try:
         start_time = time.time()
-        response = requests.post(API_URL, json=payload, timeout=10)
+        response = requests.post(API_URL, json=payload)
         duration = time.time() - start_time
 
         if response.status_code == 200:
-            try:
-                result = response.json()
-            except (json.JSONDecodeError, ValueError) as e:
-                print(f"❌ Error: Failed to parse JSON response (Status {response.status_code})")
-                print(f"   {type(e).__name__}: {str(e)}")
-                print(f"\n--- Raw Response ---")
-                print(response.text)
-                print("-------------------")
-                sys.exit(1)
+            print(f"✅ Success! (Took {duration:.2f}s)")
+            result = response.json()
             
-            try:
-                print(f"✅ Success! (Took {duration:.2f}s)")
-                print("\n--- 🤖 AGENT REPORT ---")
-                print(f"Classification: {result['classification']}")
-                print(f"Report:\n{result['report']}")
-                print("-----------------------")
-            except KeyError as e:
-                print(f"❌ Error: Missing required key in response: {e}")
-                print(f"   Response status: {response.status_code}")
-                print(f"\n--- Raw Response ---")
-                print(response.text)
-                print("-------------------")
-                sys.exit(1)
+            print("\n--- 🤖 AGENT REPORT ---")
+            print(f"Classification: {result.get('classification')}")
+            print(f"Report:\n{result.get('report')}")
+            print("-----------------------")
         else:
             print(f"❌ Failed with Status {response.status_code}")
             print(response.text)
 
-    except requests.exceptions.Timeout:
-        print("❌ Error: Request timed out after 10 seconds. The server may be slow or unresponsive.")
-        sys.exit(1)
     except requests.exceptions.ConnectionError:
         print("❌ Error: Could not connect to localhost:8000. Is Docker running?")
-        sys.exit(1)
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Error: Request failed - {type(e).__name__}: {str(e)}")
-        sys.exit(1)
 
 
 if __name__ == "__main__":

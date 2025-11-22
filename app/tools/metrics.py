@@ -1,6 +1,7 @@
 import os
 from datetime import timedelta, datetime, timezone
 from azure.mgmt.monitor import MonitorManagementClient
+from azure.core.configuration import Configuration
 from app.core.auth import get_credential
 
 
@@ -10,8 +11,16 @@ class AzureMetricsTool:
         self.subscription_id = os.getenv("AZURE_SUBSCRIPTION_ID")
         if not self.subscription_id:
             raise ValueError("AZURE_SUBSCRIPTION_ID is not set")
-            
-        self.client = MonitorManagementClient(self.credential, self.subscription_id)
+        
+        # Configure client with increased timeout (60 seconds)
+        config = Configuration()
+        config.connection_timeout = 60
+        config.read_timeout = 60
+        self.client = MonitorManagementClient(
+            self.credential, 
+            self.subscription_id,
+            _configuration=config
+        )
 
     def _format_value(self, metric_name: str, value: float) -> str:
         """
@@ -33,7 +42,7 @@ class AzureMetricsTool:
             
         return f"{value:.2f}"
 
-    def get_metric(self, resource_id: str, metric_name: str, minutes: int = 15) -> str:
+    def get_metric(self, resource_id: str, metric_name: str, minutes: int = 30) -> str:
         """
         Fetches the metric for the last N minutes.
         """

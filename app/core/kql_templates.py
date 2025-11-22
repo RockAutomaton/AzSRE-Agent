@@ -10,7 +10,7 @@ MAX_RESOURCE_NAME_LENGTH = 256
 
 class KQLTemplate(Enum):
     CONTAINER_LOGS = "container_logs"
-    APP_EXCEPTIONS = "app_exceptions"
+    APP_FAILURES = "app_failures"  # Renamed from APP_EXCEPTIONS
     SQL_ERRORS = "sql_errors"
 
 
@@ -25,22 +25,37 @@ TEMPLATES = {
         | top 20 by TimeGenerated desc
     """,
     
-    # App Insights Exceptions (Standard Table) - with AppRoleName filter
-    KQLTemplate.APP_EXCEPTIONS: """
-        AppExceptions
-        | where TimeGenerated > ago(24h)
+    # UPGRADED: Comprehensive Application Failure View
+    # Combines Crashes (Exceptions), HTTP Failures (Requests), and Error Logs (Traces)
+    KQLTemplate.APP_FAILURES: """
+        union 
+            (AppExceptions 
+             | where TimeGenerated > ago(1h)
+             | project TimeGenerated, Type='Crash', Message=OuterMessage, Details=Method, AppRoleName),
+            (AppRequests 
+             | where TimeGenerated > ago(1h) and Success == false 
+             | project TimeGenerated, Type='HTTP Failure', Message=strcat(ResultCode, ' - ', Url), Details=Name, AppRoleName),
+            (AppTraces 
+             | where TimeGenerated > ago(1h) and SeverityLevel >= 3 
+             | project TimeGenerated, Type='Error Log', Message=Message, Details=OperationName, AppRoleName)
         | where AppRoleName has {resource_name}
-        | summarize Count=count() by ProblemId, OuterMessage
-        | top 5 by Count desc
+        | top 20 by TimeGenerated desc
     """,
     
-    # App Insights Exceptions (Standard Table) - for Unknown resource (empty/missing AppRoleName)
-    "APP_EXCEPTIONS_UNKNOWN": """
-        AppExceptions
-        | where TimeGenerated > ago(24h)
+    # App Insights Failures - for Unknown resource (empty/missing AppRoleName)
+    "APP_FAILURES_UNKNOWN": """
+        union 
+            (AppExceptions 
+             | where TimeGenerated > ago(1h)
+             | project TimeGenerated, Type='Crash', Message=OuterMessage, Details=Method, AppRoleName),
+            (AppRequests 
+             | where TimeGenerated > ago(1h) and Success == false 
+             | project TimeGenerated, Type='HTTP Failure', Message=strcat(ResultCode, ' - ', Url), Details=Name, AppRoleName),
+            (AppTraces 
+             | where TimeGenerated > ago(1h) and SeverityLevel >= 3 
+             | project TimeGenerated, Type='Error Log', Message=Message, Details=OperationName, AppRoleName)
         | where isempty(AppRoleName)
-        | summarize Count=count() by ProblemId, OuterMessage
-        | top 5 by Count desc
+        | top 20 by TimeGenerated desc
     """,
 
     # Azure Diagnostics for SQL (Standard Table)
@@ -148,9 +163,9 @@ def get_template(template_key: str, resource_name: str) -> str:
     # Handle "Unknown" resource_name case before template selection
     # This prevents the WHERE clause from always being true
     if resource_name.lower() == "unknown":
-        # For APP_EXCEPTIONS, use the template that filters for empty AppRoleName
+        # For APP_FAILURES, use the template that filters for empty AppRoleName
         if "app" in template_key.lower():
-            return TEMPLATES.get("APP_EXCEPTIONS_UNKNOWN", "").strip()
+            return TEMPLATES.get("APP_FAILURES_UNKNOWN", "").strip()
         # For other templates, we may want to handle Unknown differently
         # For now, we'll still use the regular template but the caller should be aware
     
@@ -170,7 +185,7 @@ def get_template(template_key: str, resource_name: str) -> str:
         if "container" in template_key.lower():
             key = KQLTemplate.CONTAINER_LOGS
         elif "app" in template_key.lower():
-            key = KQLTemplate.APP_EXCEPTIONS
+            key = KQLTemplate.APP_FAILURES
         elif "sql" in template_key.lower():
             key = KQLTemplate.SQL_ERRORS
         else:

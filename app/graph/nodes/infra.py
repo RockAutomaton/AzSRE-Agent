@@ -1,4 +1,3 @@
-import logging
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
@@ -8,7 +7,7 @@ from app.tools.metrics import AzureMetricsTool
 from app.core.kql_templates import get_template
 
 
-llm = ChatOllama(model="qwen3-vl:4b", temperature=0)
+llm = ChatOllama(model="gemma3:27b", temperature=0)
 log_tool = AzureLogTool()
 metrics_tool = AzureMetricsTool()
 
@@ -48,14 +47,6 @@ analysis_prompt = ChatPromptTemplate.from_messages([
 analysis_chain = analysis_prompt | llm | StrOutputParser()
 
 
-def is_valid_metric_response(metric_str: str) -> bool:
-    """Check if a metric response string contains valid data (not an error message)"""
-    if not metric_str:
-        return False
-    error_patterns = ["Error fetching", "No data found", "No recorded values", "No data points"]
-    return not any(metric_str.startswith(pattern) or pattern in metric_str for pattern in error_patterns) and "Current:" in metric_str
-
-
 def parse_metric_value(metric_str: str) -> float:
     """Helper to extract the 'Current' float value from the metric string"""
     try:
@@ -63,10 +54,9 @@ def parse_metric_value(metric_str: str) -> float:
             if "Current:" in line:
                 val_str = line.split("Current:")[1].strip().replace('%', '').replace(' Cores', '').replace(' GiB', '').replace(' MiB', '')
                 return float(val_str)
-    except (ValueError, IndexError, AttributeError) as e:
-        logging.warning(f"Failed to parse metric value. Input: {metric_str!r}, Exception: {type(e).__name__}: {e}")
-        return -1.0
-    return -1.0
+    except:
+        return 0.0
+    return 0.0
 
 
 async def infra_node(state: AgentState) -> AgentState:
@@ -82,88 +72,59 @@ async def infra_node(state: AgentState) -> AgentState:
     
     if resource_id != "Unknown":
         # 1. CPU (Threshold 90%)
-        try:
-            cpu_str = metrics_tool.get_metric(resource_id, "CpuPercentage")
-            metrics_report.append(cpu_str)
-            # Only parse and check thresholds if we got valid data
-            if is_valid_metric_response(cpu_str):
-                cpu_val = parse_metric_value(cpu_str)
-                if cpu_val >= 0 and cpu_val > 90.0:
-                    needs_logs = True
-        except Exception as e:
-            logging.error(f"Failed to get CpuPercentage metric for resource {resource_id}: {type(e).__name__}: {e}")
-            metrics_report.append("CpuPercentage: Collection failed")
+        cpu_str = metrics_tool.get_metric(resource_id, "CpuPercentage")
+        metrics_report.append(cpu_str)
+        if parse_metric_value(cpu_str) > 90.0: 
+            needs_logs = True 
         
         # 2. Memory (Threshold 90%)
-        try:
-            mem_str = metrics_tool.get_metric(resource_id, "MemoryPercentage")
-            metrics_report.append(mem_str)
-            # Only parse and check thresholds if we got valid data
-            if is_valid_metric_response(mem_str):
-                mem_val = parse_metric_value(mem_str)
-                if mem_val >= 0 and mem_val > 90.0:
-                    needs_logs = True
-        except Exception as e:
-            logging.error(f"Failed to get MemoryPercentage metric for resource {resource_id}: {type(e).__name__}: {e}")
-            metrics_report.append("MemoryPercentage: Collection failed")
+        mem_str = metrics_tool.get_metric(resource_id, "MemoryPercentage")
+        metrics_report.append(mem_str)
+        if parse_metric_value(mem_str) > 90.0: 
+            needs_logs = True
 
-        # 3. Restarts (Always check logs if restarts > 0)
-        try:
-            restarts_str = metrics_tool.get_metric(resource_id, "RestartCount")
-            metrics_report.append(restarts_str)
-            # Only parse and check thresholds if we got valid data
-            if is_valid_metric_response(restarts_str):
-                restarts_val = parse_metric_value(restarts_str)
-                if restarts_val >= 0 and restarts_val > 0:
-                    needs_logs = True
-        except Exception as e:
-            logging.error(f"Failed to get RestartCount metric for resource {resource_id}: {type(e).__name__}: {e}")
-            metrics_report.append("RestartCount: Collection failed")
+        # 3. Restarts (Threshold > 0)
+        restarts_str = metrics_tool.get_metric(resource_id, "RestartCount")
+        metrics_report.append(restarts_str)
+        if parse_metric_value(restarts_str) > 0: 
+            needs_logs = True
         
-        # 4. Requests (Context only)
-        try:
-            reqs_str = metrics_tool.get_metric(resource_id, "Requests")
-            metrics_report.append(reqs_str)
-        except Exception as e:
-            logging.error(f"Failed to get Requests metric for resource {resource_id}: {type(e).__name__}: {e}")
-            metrics_report.append("Requests: Collection failed")
+        # 4. Requests
+        reqs_str = metrics_tool.get_metric(resource_id, "Requests")
+        metrics_report.append(reqs_str)
         
-    metrics_data = "\n".join(metrics_report) if metrics_report else "Not checked."
+    metrics_data = "\n".join(metrics_report)
     print(f"Metrics Collected:\n{metrics_data}")
 
-    # B. Conditional Log Check (STRICT MODE)
-    logs = "Logs skipped (Metrics healthy, below 90% threshold)."
-    
-    if needs_logs:
-        print(f"⚠️ Metrics exceed 90% threshold or Restarts detected. Running KQL...")
-        try:
-            template_key = await selector_chain.ainvoke({
-                "alert_rule": alert.essentials.alertRule,
-                "resource": resource_name
-            })
-        except Exception as e:
-            logging.error(
-                f"Failed to invoke selector chain for alert {alert.essentials.alertId} "
-                f"on resource {resource_name}: {type(e).__name__}: {e}"
-            )
-            template_key = ""
+    # B. Logic Branch: Healthy vs Unhealthy
+    if not needs_logs:
+        # SHORT CIRCUIT: Skip LLM entirely if metrics are fine
+        print("✅ Metrics healthy (<90%). Short-circuiting investigation.")
+        report = (f"Infrastructure is HEALTHY.\n\nMetrics:\n{metrics_data}\n\n"
+                  "No active CPU/Memory pressure or restarts detected. Skipping log analysis.")
         
-        if isinstance(template_key, str):
-            template_key = template_key.strip().lower()
-        
-        try:
-            query = get_template(template_key, resource_name)
-            print(f"Executing KQL: {query}")
-            logs = log_tool.run_query(query)
-        except Exception as e:
-            logs = f"Template Error: {str(e)}"
-            
-        steps = ["Checked Metrics", f"Ran Template: {template_key}"]
-    else:
-        print("✅ Metrics healthy (<90%). Skipping Log Investigation.")
-        steps = ["Checked Metrics", "Skipped Logs (Healthy)"]
+        return {
+            "investigation_steps": state["investigation_steps"] + ["Checked Metrics", "Skipped Logs (Healthy)"],
+            "final_report": report
+        }
 
-    # C. Analyze
+    # C. Deep Investigation (Only runs if issues found)
+    print(f"⚠️ Metrics exceed thresholds. Starting Deep Dive...")
+    template_key = await selector_chain.ainvoke({
+        "alert_rule": alert.essentials.alertRule,
+        "resource": resource_name
+    })
+    template_key = template_key.strip().lower()
+    
+    logs = ""
+    try:
+        query = get_template(template_key, resource_name)
+        print(f"Executing KQL: {query}")
+        logs = log_tool.run_query(query)
+    except Exception as e:
+        logs = f"Template Error: {str(e)}"
+
+    # D. LLM Analysis
     report = await analysis_chain.ainvoke({
         "alert_rule": alert.essentials.alertRule,
         "metrics": metrics_data,
@@ -171,6 +132,6 @@ async def infra_node(state: AgentState) -> AgentState:
     })
     
     return {
-        "investigation_steps": state["investigation_steps"] + steps,
+        "investigation_steps": state["investigation_steps"] + ["Checked Metrics (Flagged)", f"Ran Template: {template_key}"],
         "final_report": report
     }

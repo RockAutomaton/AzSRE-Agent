@@ -63,10 +63,10 @@ async def verify_node(state: AgentState) -> AgentState:
             # Run blocking calls off the event loop concurrently
             try:
                 cpu_status, mem_status = await asyncio.gather(
-                    asyncio.to_thread(metrics_tool.get_metric, resource_id, "CpuPercentage", 5),
-                    asyncio.to_thread(metrics_tool.get_metric, resource_id, "MemoryPercentage", 5)
+                    asyncio.to_thread(metrics_tool.get_metric, resource_id, "CpuPercentage", 15),
+                    asyncio.to_thread(metrics_tool.get_metric, resource_id, "MemoryPercentage", 15)
                 )
-                status_report = f"Current Infrastructure Status (5m):\n{cpu_status}\n{mem_status}"
+                status_report = f"Current Infrastructure Status (15m):\n{cpu_status}\n{mem_status}"
             except Exception as metric_error:
                 status_report = f"Error fetching metrics: {str(metric_error)}"
             
@@ -83,22 +83,22 @@ async def verify_node(state: AgentState) -> AgentState:
                 # Build query with safely escaped value
                 query = f"""
                     {table}
-                    | where TimeGenerated > ago(5m)
+                    | where TimeGenerated > ago(15m)
                     | where {field_name} has {safe_resource}
                     | count
                 """
                 
                 print(f"Verifying with KQL: {query}")
                 # Run blocking query call off the event loop
-                count_result = await asyncio.to_thread(log_tool.run_query, query, 5)
+                count_result = await asyncio.to_thread(log_tool.run_query, query, 15)
                 
                 # Robust check: If result contains a number > 0, it's active
                 if "No logs found" in count_result:
-                    status_report = "✅ No active errors detected in the last 5 minutes."
+                    status_report = "✅ No active errors detected in the last 15 minutes."
                 elif "0" in count_result and "Count" in count_result: 
-                    status_report = "✅ No active errors detected in the last 5 minutes."
+                    status_report = "✅ No active errors detected in the last 15 minutes."
                 else:
-                    status_report = f"⚠️ Alert Condition matches active logs in last 5m.\nResult: {count_result}"
+                    status_report = f"⚠️ Alert Condition matches active logs in last 15m.\nResult: {count_result}"
             except ValueError as validation_error:
                 status_report = f"Verification Failed: Invalid resource name - {str(validation_error)}"
                 print(f"Validation error: {validation_error}")

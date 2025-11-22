@@ -1,17 +1,22 @@
 import os
 from datetime import timedelta
 from azure.monitor.query import LogsQueryClient, LogsQueryStatus
+from azure.core.configuration import Configuration
 from app.core.auth import get_credential
 
 
 class AzureLogTool:
     def __init__(self):
         self.credential = get_credential()
-        self.client = LogsQueryClient(self.credential)
+        # Configure client with increased timeout (60 seconds)
+        config = Configuration()
+        config.connection_timeout = 60
+        config.read_timeout = 60
+        self.client = LogsQueryClient(self.credential, _configuration=config)
         # You must set LOG_WORKSPACE_ID in your .env file
         self.workspace_id = os.getenv("LOG_WORKSPACE_ID")
 
-    def run_query(self, query: str, timespan_minutes: int = 15) -> str:
+    def run_query(self, query: str, timespan_minutes: int = 30) -> str:
         """
         Executes a KQL query and returns the results as a string table.
         """

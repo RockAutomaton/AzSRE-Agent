@@ -1,0 +1,36 @@
+{
+  "schemaId": "azureMonitorCommonAlertSchema",
+  "data": {
+    "essentials": {
+      "alertId": "/subscriptions/123/providers/Microsoft.Alerts/alerts/failure-spike-123",
+      "alertRule": "Failure Anomalies - nuffin-api",
+      "severity": "Sev1",
+      "signalType": "Metric",
+      "monitorCondition": "Fired",
+      "monitoringService": "Application Insights",
+      "alertTargetIDs": [
+        "/subscriptions/555-555/resourceGroups/rg-nuffin/providers/microsoft.insights/components/nuffin"
+      ],
+      "firedDateTime": "2024-11-22T14:30:00.000Z",
+      "description": "Abnormal rise in failed request rate detected.",
+      "essentialsVersion": "1.0",
+      "alertContextVersion": "1.0"
+    },
+    "alertContext": {
+      "conditionType": "SmartDetection",
+      "condition": {
+        "windowSize": "PT5M",
+        "allOf": [
+          {
+            "metricName": "Failed Requests",
+            "operator": "GreaterThan",
+            "threshold": "5",
+            "timeAggregation": "Count",
+            "metricValue": 12
+          }
+        ]
+      }
+    }
+  }
+}
+

@@ -7,24 +7,26 @@ from app.core.kql_templates import get_template
 
 
 log_tool = AzureLogTool()
-llm = ChatOllama(model="qwen3-vl:4b", temperature=0)
+llm = ChatOllama(model="gemma3:27b", temperature=0)
 
 
+# Updated Prompt to handle mixed failure types
 analysis_prompt = ChatPromptTemplate.from_messages([
-    ("system", """You are an App Insights Analyst.
+    ("system", """You are an Application Support Engineer.
+    You are looking at a timeline of recent failures (Crashes, HTTP 500s, Error Logs).
     
-    RULES:
-    - If 'Exceptions found' contains "No logs found", simply state: "No recent application exceptions detected."
-    - Do NOT assume the logging system is broken.
-    - Only report specific exceptions if they appear in the text.
+    INSTRUCTIONS:
+    - Identify if the issue is a Code Crash (Type='Crash') or an API Failure (Type='HTTP Failure').
+    - Look for patterns: Are specific URLs failing? Is it the same exception repeating?
+    - If the log says "No logs found", report: "No active application failures detected."
     """),
-    ("human", "Exceptions found:\n{logs}\n\nExplain what is crashing:")
+    ("human", "Failure Timeline:\n{logs}\n\nRoot Cause Analysis:")
 ])
 analysis_chain = analysis_prompt | llm | StrOutputParser()
 
 
 async def app_node(state: AgentState) -> AgentState:
-    print("--- APP NODE: Checking App Insights (Templated) ---")
+    print("--- APP NODE: Checking Failures & Exceptions ---")
     alert = state["alert_data"]
     
     # Safely extract resource_id with validation
@@ -43,8 +45,8 @@ async def app_node(state: AgentState) -> AgentState:
     else:
         resource_name = resource_id if isinstance(resource_id, str) and resource_id else "Unknown"
 
-    # 1. Get Template
-    query = get_template("app_exceptions", resource_name)
+    # 1. Get Template (New Failures Template)
+    query = get_template("app_failures", resource_name)
     
     # 2. Run Query
     print(f"Executing KQL: {query}")
@@ -54,6 +56,6 @@ async def app_node(state: AgentState) -> AgentState:
     report = await analysis_chain.ainvoke({"logs": logs})
 
     return {
-        "investigation_steps": state["investigation_steps"] + ["Checked AppExceptions (Templated)"],
+        "investigation_steps": state["investigation_steps"] + ["Checked App Failures (Requests + Exceptions)"],
         "final_report": report
     }
