@@ -109,17 +109,20 @@ graph TD
 **Location**: `app/graph/nodes/app.py`
 
 **Functionality**:
-- Executes a **three-part diagnostic suite**:
-  1. **Impact Analysis**: Groups exceptions by `ProblemId` and `OperationId` to distinguish systemic failures from retry loops
-  2. **Pattern Recognition**: Uses KQL `autocluster()` to find common attributes in failed requests (browser, OS, city, etc.)
-  3. **Dependency Failures**: Correlates failed requests with downstream dependency failures to identify root causes
+- Executes a **four-part diagnostic suite**:
+  1. **Impact Analysis** (`app_impact_analysis`): Unified telemetry query that unions all Application Insights tables (AppRequests, AppExceptions, AppDependencies, AppTraces, AppPageViews, AppAvailabilityResults, AppEvents) to get a comprehensive view of application health
+  2. **Pattern Recognition** (`app_patterns`): Uses unified diagnostics to identify common patterns in failed requests (browser, OS, city, etc.)
+  3. **Dependency Failures** (`dependency_failures`): Correlates failed requests with downstream dependency failures by joining AppRequests and AppDependencies on OperationId to identify root causes
+  4. **Recent Changes** (`recent_changes`): Checks AzureActivity logs for recent deployments and configuration changes that might have triggered the issue
 - Uses `gemma3:27b` model for root cause analysis
 - Handles KQL errors gracefully (e.g., `BadArgumentError`)
+- Generates Azure Portal deep links to specific OperationIds for manual investigation
 
 **KQL Templates Used**:
-- `app_impact_analysis`: Signal vs. noise analysis
-- `app_patterns`: ML-based pattern matching
-- `dependency_failures`: Correlation with downstream services
+- `app_impact_analysis` (maps to `unified_diagnostics`): Unified telemetry query across AppRequests, AppExceptions, AppDependencies, AppTraces, AppPageViews, AppAvailabilityResults, and AppEvents
+- `app_patterns` (maps to `unified_diagnostics`): ML-based pattern matching using autocluster
+- `dependency_failures`: Correlation with downstream services by joining AppRequests and AppDependencies on OperationId
+- `recent_changes`: Checks AzureActivity for recent deployments and configuration changes
 
 #### Network Node (`network_placeholder_node`)
 
@@ -168,13 +171,20 @@ The workflow uses a `TypedDict` state (`AgentState`) that is passed between node
 
 ```python
 class AgentState(TypedDict, total=False):
-    alert_data: AzureAlertData          # Original alert payload
-    investigation_steps: List[str]      # Accumulated investigation steps
-    final_report: Optional[str]         # Final formatted report
-    classification: Optional[str]       # Set by triage node
+    alert_data: AzureAlertData          # Original alert payload from Azure Monitor
+    investigation_steps: List[str]      # Accumulated investigation steps (appended by each node)
+    final_report: Optional[str]         # Final formatted report (set by specialist nodes, overwritten by reporter)
+    classification: Optional[str]       # Set by triage node (INFRA, DATABASE, NETWORK, or APP)
 ```
 
-Each node can read from and update the state, allowing information to flow through the workflow.
+**State Flow**:
+1. **Initial State**: Created from webhook payload with empty `investigation_steps` and `None` for `final_report` and `classification`
+2. **Triage Node**: Sets `classification` and adds first step to `investigation_steps`
+3. **Specialist Nodes**: Add investigation steps and set `final_report` with technical findings
+4. **Verify Node**: Adds verification step to `investigation_steps` (does not modify `final_report`)
+5. **Reporter Node**: Overwrites `final_report` with a polished, formatted Markdown report
+
+Each node can read from and update the state, allowing information to flow through the workflow. The state is immutable from the node's perspective (nodes return new state dictionaries rather than mutating the existing one).
 
 ## Routing Logic
 
@@ -208,13 +218,15 @@ Routing supports:
 ### KQL Templates (`app/core/kql_templates.py`)
 
 - Pre-defined KQL query templates for common investigation patterns
-- Includes input sanitization to prevent KQL injection
+- Includes strict input sanitization to prevent KQL injection (whitelist validation, dangerous token detection)
+- Template system uses enum-based keys with fallback fuzzy matching for backward compatibility
 - Templates include:
-  - `container_logs`: Container Apps console logs
-  - `app_impact_analysis`: Exception grouping by ProblemId
-  - `app_patterns`: ML autocluster for pattern detection
-  - `dependency_failures`: Request-dependency correlation
-  - `sql_errors`: SQL error logs from Azure Diagnostics
+  - `container_logs`: Container Apps console logs from ContainerAppConsoleLogs table
+  - `unified_diagnostics`: Unions all Application Insights tables (AppRequests, AppExceptions, AppDependencies, AppTraces, AppPageViews, AppAvailabilityResults, AppEvents) with consistent column mapping
+  - `dependency_failures`: Joins AppRequests and AppDependencies on OperationId to correlate request failures with downstream dependency failures
+  - `sql_errors`: SQL error logs from AzureDiagnostics table (Category: SQLErrors or Timeouts)
+  - `recent_changes`: AzureActivity logs for recent administrative operations (deployments, config changes)
+- Template keys like `app_impact_analysis` and `app_patterns` are automatically mapped to `unified_diagnostics` via fallback logic
 
 ## Authentication
 
@@ -226,11 +238,76 @@ The system uses Azure's `DefaultAzureCredential` chain:
 
 ## LLM Models Used
 
+The system uses different models for different tasks, optimized for performance and accuracy:
+
 - **Triage**: `qwen3-vl:4b` (lightweight, fast classification)
 - **Infrastructure Analysis**: `gemma3:27b` (template selection and analysis)
 - **Application Analysis**: `gemma3:27b` (root cause analysis)
 - **Database Reporting**: `qwen3-vl:4b` (metric summarization)
 - **Reporter**: `qwen3-vl:4b` (report synthesis)
+- **Main Chat Endpoint**: `gemma3:27b` (general-purpose chat)
 
 All models run via **Ollama** (local LLM server) with `temperature=0` for deterministic outputs.
+
+**Model Configuration**:
+- Models can be overridden via environment variables:
+  - `OLLAMA_MODEL_TRIAGE` (default: `qwen3-vl:4b`)
+  - `OLLAMA_MODEL_ANALYSIS` (default: `gemma3:27b`)
+  - `OLLAMA_MODEL_DATABASE` (default: `qwen3-vl:4b`)
+  - `OLLAMA_MODEL_REPORTER` (default: `qwen3-vl:4b`)
+  - `OLLAMA_MODEL_MAIN` (default: `gemma3:27b`)
+- Ollama base URL can be configured via `OLLAMA_BASE_URL` (default: `http://localhost:11434`)
+- For Docker deployments, set `OLLAMA_BASE_URL=http://ollama:11434` to connect to the Ollama service container
+- See `app/core/ollama_config.py` for configuration details
+
+## API Endpoints
+
+The FastAPI application (`app/main.py`) exposes the following endpoints:
+
+### `POST /webhook/azure`
+
+**Purpose**: Receives Azure Monitor alert webhooks and processes them through the agent workflow.
+
+**Request Body**: `AzureWebhookPayload` (Pydantic model matching Azure Monitor Common Alert Schema)
+
+**Response**:
+```json
+{
+  "classification": "INFRA|DATABASE|APP|NETWORK",
+  "report": "Markdown formatted incident report",
+  "steps": ["Step 1", "Step 2", ...]
+}
+```
+
+**Error Responses**:
+- `503 Service Unavailable`: Workflow graph not initialized
+- `422 Unprocessable Entity`: Invalid payload structure
+
+### `POST /chat`
+
+**Purpose**: Simple chat endpoint for testing LLM connectivity (waits for full response).
+
+**Request Body**:
+```json
+{
+  "message": "Your message here"
+}
+```
+
+**Response**:
+```json
+{
+  "response": "LLM response text"
+}
+```
+
+### `POST /stream`
+
+**Purpose**: Streaming chat endpoint that returns responses token-by-token (prevents webhook timeouts on long generations).
+
+**Request Body**: Same as `/chat`
+
+**Response**: `text/event-stream` with streaming chunks
+
+**Note**: The `/chat` and `/stream` endpoints are primarily for testing and development. Production use should focus on the `/webhook/azure` endpoint.
 

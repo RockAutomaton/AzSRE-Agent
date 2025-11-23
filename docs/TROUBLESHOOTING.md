@@ -17,12 +17,14 @@ KQL queries can fail due to schema mismatches. Common causes include:
 - Case sensitivity issues (e.g., `user_Id` vs `user_id`)
 - Missing columns in the Log Analytics workspace
 - Incorrect table names or schema changes
+- Application Insights tables may not exist if the resource doesn't send telemetry to Log Analytics
 
 **Solution**:
 1. **Check the KQL template**: Review the query in `app/core/kql_templates.py`
 2. **Verify table schema**: Run the query directly in Azure Portal → Log Analytics to see the actual column names
 3. **Update the template**: Modify the query to match your workspace schema
 4. **Use safe operators**: The agent uses `has` operator for string matching, which is more forgiving than exact matches
+5. **Check table existence**: Verify that Application Insights tables (AppRequests, AppExceptions, etc.) exist in your workspace
 
 **Example Fix**:
 ```python
@@ -32,6 +34,8 @@ KQL queries can fail due to schema mismatches. Common causes include:
 # After (safer, uses has operator)
 | where AppRoleName has "value"
 ```
+
+**Note**: The app node's analysis prompt includes a safety rail that detects KQL errors and reports them as "Agent Configuration Error: Unable to query logs" rather than interpreting them as application failures.
 
 ### 2. ConnectionError: Ollama Not Running
 
@@ -138,16 +142,22 @@ ollama list
 **Error Message**:
 ```
 ValueError: Resource name contains invalid characters
+ValueError: Resource name is empty or too long
+ValueError: Resource name contains dangerous token
 ```
 
 **Cause**: 
-The resource name contains characters that could be used for KQL injection. The agent uses strict validation to prevent security issues.
+The resource name contains characters that could be used for KQL injection. The agent uses strict validation to prevent security issues. The validation checks for:
+- Empty or excessively long names (>256 characters)
+- Dangerous tokens: newlines (`\n`, `\r`), pipe (`|`), backslash (`\`), comment markers (`//`, `/*`, `*/`)
+- Invalid characters outside the whitelist
 
 **Solution**:
-- Ensure resource names only contain alphanumeric characters, hyphens, underscores, dots, and forward slashes
+- Ensure resource names only contain alphanumeric characters, hyphens, underscores, dots, spaces, and forward slashes
 - If you're passing custom resource names, sanitize them before calling the agent
+- The validation is performed by `sanitize_resource_name()` in `app/core/kql_templates.py` and `validate_and_escape_kql_string()` in `app/graph/nodes/verify.py`
 
-**Valid Characters**: `a-z`, `A-Z`, `0-9`, `-`, `_`, `.`, `/`
+**Valid Characters**: `a-z`, `A-Z`, `0-9`, `-`, `_`, `.`, `/`, ` ` (space)
 
 ### 7. Workflow Graph Not Initialized
 

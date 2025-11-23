@@ -6,7 +6,7 @@ This guide will help you set up the Azure SRE Agent for local development and te
 
 ### 1. Python 3.13+
 
-The project requires Python 3.13 or higher. Verify your Python version:
+The project requires Python 3.13 or higher (as specified in `pyproject.toml`). Verify your Python version:
 
 ```bash
 python --version
@@ -74,13 +74,17 @@ curl http://localhost:11434/api/tags
 Create a `.env` file in the project root with the following variables:
 
 ```bash
-# Azure Configuration
+# Azure Configuration (Required)
 AZURE_SUBSCRIPTION_ID=your-subscription-id-here
 LOG_WORKSPACE_ID=your-workspace-id-here
 
-# Optional: Azure OpenAI (if not using Ollama)
-# AZURE_OPENAI_API_KEY=your-key-here
-# AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
+# Ollama Configuration (Optional - defaults shown)
+# OLLAMA_BASE_URL=http://localhost:11434
+# OLLAMA_MODEL_TRIAGE=qwen3-vl:4b
+# OLLAMA_MODEL_ANALYSIS=gemma3:27b
+# OLLAMA_MODEL_DATABASE=qwen3-vl:4b
+# OLLAMA_MODEL_REPORTER=qwen3-vl:4b
+# OLLAMA_MODEL_MAIN=gemma3:27b
 ```
 
 ### Finding Your Subscription ID
@@ -180,7 +184,40 @@ The script will:
 
 ## Docker Setup (Optional)
 
-If you prefer to run the agent in Docker:
+The project includes Docker support for containerized deployment.
+
+### Using Docker Compose (Recommended)
+
+The project includes a `docker-compose.yml` file that sets up both the agent and Ollama services:
+
+```bash
+# Start both services
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop services
+docker-compose down
+```
+
+The Docker Compose setup:
+- Runs the agent on port 8000
+- Runs Ollama on port 11434
+- Configures the agent to connect to Ollama via the service name
+- Mounts environment variables from `.env` file
+
+**Environment Variables for Docker Compose**:
+Create a `.env` file in the project root (same as local setup):
+```bash
+AZURE_SUBSCRIPTION_ID=your-subscription-id
+LOG_WORKSPACE_ID=your-workspace-id
+OLLAMA_BASE_URL=http://ollama:11434
+```
+
+### Using Docker Directly
+
+If you prefer to run the agent in Docker without Docker Compose:
 
 ```bash
 # Build the image
@@ -190,10 +227,14 @@ docker build -t azsre-agent .
 docker run -p 8000:8000 \
   -e AZURE_SUBSCRIPTION_ID=your-subscription-id \
   -e LOG_WORKSPACE_ID=your-workspace-id \
+  -e OLLAMA_BASE_URL=http://host.docker.internal:11434 \
   azsre-agent
 ```
 
-**Note**: For Docker, you may need to configure Managed Identity or use environment variables for Azure authentication instead of Azure CLI.
+**Note**: 
+- For Docker, you may need to configure Managed Identity or use environment variables for Azure authentication instead of Azure CLI
+- If running Ollama separately, ensure the `OLLAMA_BASE_URL` points to the correct address (use `host.docker.internal` for local Ollama, or the container name if using Docker Compose)
+- The agent container needs network access to both Azure APIs and the Ollama service
 
 ## Verifying Your Setup
 

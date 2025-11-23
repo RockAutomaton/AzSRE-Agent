@@ -100,26 +100,40 @@ AzSRE-Agent/
 
 ## Technology Stack
 
-- **LangGraph**: Workflow orchestration
+- **LangGraph**: Workflow orchestration and state management
 - **LangChain**: LLM integration and prompt management
 - **Ollama**: Local LLM server (qwen3-vl:4b, gemma3:27b)
-- **FastAPI**: REST API framework
-- **Azure Monitor Query API**: KQL query execution
-- **Azure Monitor Management API**: Metrics retrieval
-- **Pydantic**: Data validation and serialization
+- **FastAPI**: REST API framework with async support
+- **Azure Monitor Query API**: KQL query execution against Log Analytics workspaces
+- **Azure Monitor Management API**: Real-time metrics retrieval
+- **Pydantic**: Data validation and serialization for Azure alert schemas
+- **Azure Identity**: DefaultAzureCredential for authentication (supports Azure CLI, Managed Identity, and environment variables)
+- **uv**: Fast Python package manager (alternative to pip)
 
 ## Workflow Overview
 
 ```
-Azure Alert → Triage → [Infra/DB/App/Network] → Verify → Reporter → Final Report
+Azure Alert Webhook → Triage → [Infra/DB/App/Network] → Verify → Reporter → Final Report
 ```
 
-1. **Triage**: Classifies alert using LLM + keyword fallback
-2. **Specialist Nodes**: Execute domain-specific investigations
-3. **Verify**: Confirms alert is still active
-4. **Reporter**: Synthesizes final Markdown report
+1. **Triage**: Classifies alert using LLM (`qwen3-vl:4b`) + keyword fallback heuristics
+2. **Specialist Nodes**: Execute domain-specific investigations:
+   - **Infrastructure**: Metrics checks (CPU, Memory, Restarts) + KQL log analysis
+   - **Database**: SQL metrics (DTU, CPU, Storage)
+   - **Application**: Four-part diagnostic suite (impact analysis, patterns, dependencies, recent changes)
+   - **Network**: Placeholder (pending implementation)
+3. **Verify**: Confirms alert is still active (prevents false positives)
+4. **Reporter**: Synthesizes final Markdown report with classification, summary, evidence, and recommendations
 
 See the [Architecture Guide](./ARCHITECTURE.md) for detailed workflow diagrams and node descriptions.
+
+## API Endpoints
+
+- **`POST /webhook/azure`**: Main endpoint for Azure Monitor alert processing
+- **`POST /chat`**: Simple chat endpoint for testing (waits for full response)
+- **`POST /stream`**: Streaming chat endpoint (token-by-token response)
+
+See the [Architecture Guide](./ARCHITECTURE.md) for detailed API documentation.
 
 ## Contributing
 

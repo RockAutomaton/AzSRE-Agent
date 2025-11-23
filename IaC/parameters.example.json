@@ -1,0 +1,85 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "subscriptionId": {
+      "value": "YOUR_SUBSCRIPTION_ID"
+    },
+    "location": {
+      "value": "UK South"
+    },
+    "containerAppsEnvironmentName": {
+      "value": "YOUR_ENVIRONMENT_NAME"
+    },
+    "containerRegistryName": {
+      "value": "YOUR_REGISTRY_NAME"
+    },
+    "mainContainerAppName": {
+      "value": "YOUR_MAIN_APP_NAME"
+    },
+    "ollamaContainerAppName": {
+      "value": "YOUR_OLLAMA_APP_NAME"
+    },
+    "applicationInsightsName": {
+      "value": "YOUR_APP_INSIGHTS_NAME"
+    },
+    "logAnalyticsWorkspaceName": {
+      "value": "YOUR_WORKSPACE_NAME"
+    },
+    "logWorkspaceId": {
+      "value": "YOUR_LOG_WORKSPACE_ID"
+    },
+    "mainAppImageName": {
+      "value": "YOUR_IMAGE_NAME"
+    },
+    "imageTag": {
+      "value": "latest"
+    },
+    "ollamaModelTriage": {
+      "value": "YOUR_MODEL_NAME"
+    },
+    "ollamaModelAnalysis": {
+      "value": "YOUR_MODEL_NAME"
+    },
+    "ollamaModelDatabase": {
+      "value": "YOUR_MODEL_NAME"
+    },
+    "ollamaModelReporter": {
+      "value": "YOUR_MODEL_NAME"
+    },
+    "ollamaModelMain": {
+      "value": "YOUR_MODEL_NAME"
+    },
+    "gpuWorkloadProfileName": {
+      "value": "YOUR_WORKLOAD_PROFILE_NAME"
+    },
+    "mainAppCpu": {
+      "value": "0.5"
+    },
+    "mainAppMemory": {
+      "value": "1Gi"
+    },
+    "mainAppTargetPort": {
+      "value": 8000
+    },
+    "ollamaAppCpu": {
+      "value": 2
+    },
+    "ollamaAppMemory": {
+      "value": "8Gi"
+    },
+    "ollamaAppTargetPort": {
+      "value": 11434
+    },
+    "minReplicas": {
+      "value": 0
+    },
+    "maxReplicas": {
+      "value": 10
+    },
+    "mainContainerName": {
+      "value": "YOUR_CONTAINER_NAME"
+    }
+  }
+}
+
