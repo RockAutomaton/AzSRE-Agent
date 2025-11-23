@@ -1,4 +1,7 @@
 import asyncio
+import os
+import re
+import urllib.parse
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
@@ -38,6 +41,28 @@ analysis_prompt = ChatPromptTemplate.from_messages([
 analysis_chain = analysis_prompt | llm | StrOutputParser()
 
 
+def generate_portal_link(subscription_id, resource_group, resource_name, operation_id):
+    """
+    Constructs a deep link to the Transaction Search blade in Azure Portal.
+    Note: This is a simplified approximation; deep linking to specific transactions is complex.
+    We link to the 'Search' blade pre-filtered by the OperationId.
+    """
+    if not operation_id or operation_id == "Unknown":
+        return "N/A"
+        
+    # Encode the query
+    query = f'union * | where operation_Id == "{operation_id}"'
+    query_encoded = urllib.parse.quote(query)
+    
+    # Construct URL (Generic Logs Blade Link)
+    # Requires the full resource ID structure. Assuming standard structure for now.
+    # You might need to pass the full ID from alert_data instead of rebuilding it.
+    full_resource_id = f"/subscriptions/{subscription_id}/resourceGroups/{resource_group}/providers/microsoft.insights/components/{resource_name}"
+    encoded_rid = urllib.parse.quote(full_resource_id)
+    
+    return f"https://portal.azure.com/#blade/Microsoft_Azure_Monitoring_Logs/LogsBlade/resourceId/{encoded_rid}/source/LogsBlade.AnalyticsShareLinkToQuery/q/{query_encoded}"
+
+
 async def app_node(state: AgentState) -> AgentState:
     print("--- APP NODE: Deep Dive Diagnostic Suite ---")
     alert = state["alert_data"]
@@ -53,7 +78,7 @@ async def app_node(state: AgentState) -> AgentState:
     else:
         resource_name = str(resource_id)
 
-    # Execute Diagnostic Suite (3 Distinct Strategies)
+    # Execute Diagnostic Suite (4 Distinct Strategies)
     # 1. Impact Analysis (Signal vs Noise)
     q1 = get_template("app_impact_analysis", resource_name)
     
@@ -62,6 +87,9 @@ async def app_node(state: AgentState) -> AgentState:
     
     # 3. Dependency Correlation (Root Cause)
     q3 = get_template("dependency_failures", resource_name)
+    
+    # 4. Recent Configuration Changes (Deployment Correlation)
+    q4 = get_template("recent_changes", resource_name)
     
     print(f"Executing Diagnostic Suite for {resource_name}...")
     
@@ -72,6 +100,37 @@ async def app_node(state: AgentState) -> AgentState:
     results_impact = log_tool.run_query(q1)
     results_patterns = log_tool.run_query(q2)
     results_deps = log_tool.run_query(q3)
+    results_changes = log_tool.run_query(q4)
+    
+    # Extract a sample OperationId for the link (simple parsing)
+    sample_op_id = "Unknown"
+    if "OperationId" in results_impact or "operation_Id" in results_impact:
+        # Extremely naive parse for demo purposes. 
+        # Ideally, use a structured parser or LLM extraction.
+        try:
+            # Look for a GUID-like string in the text block (OperationId is typically a GUID)
+            # Also check for 32 hex chars (trace IDs)
+            guid_pattern = r'[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}'
+            hex_pattern = r'[a-f0-9]{32}'
+            match = re.search(guid_pattern, results_impact, re.IGNORECASE) or re.search(hex_pattern, results_impact, re.IGNORECASE)
+            if match:
+                sample_op_id = match.group(0)
+        except:
+            pass
+
+    # Generate Link
+    # We need sub_id and rg from the alert essentials or env vars
+    # For now, using placeholders or extraction if available in alert_data
+    sub_id = os.getenv("AZURE_SUBSCRIPTION_ID", "YOUR_SUB_ID")
+    # Try to extract RG from ID: /subscriptions/X/resourceGroups/Y/...
+    rg = "YOUR_RG"
+    if "/resourceGroups/" in str(resource_id):
+        try:
+            rg = str(resource_id).split("/resourceGroups/")[1].split("/")[0]
+        except:
+            pass
+            
+    portal_link = generate_portal_link(sub_id, rg, resource_name, sample_op_id)
     
     combined_logs = f"""
     === SECTION 1: IMPACT ANALYSIS (Exceptions by Operation Breadth) ===
@@ -82,6 +141,13 @@ async def app_node(state: AgentState) -> AgentState:
     
     === SECTION 3: DEPENDENCY FAILURES (Downstream Correlation) ===
     {results_deps}
+    
+    === SECTION 4: RECENT CONFIG CHANGES (Deployment Correlation) ===
+    {results_changes}
+    
+    === METADATA ===
+    Sample Trace ID: {sample_op_id}
+    Investigate Link: {portal_link}
     """
 
     # Analyze
@@ -91,7 +157,8 @@ async def app_node(state: AgentState) -> AgentState:
         "investigation_steps": state["investigation_steps"] + [
             "Ran Impact Analysis (ProblemId grouping)",
             "Ran Intelligent Pattern Recognition",
-            "Checked Dependency Failures"
+            "Checked Dependency Failures",
+            "Checked Recent Configuration Changes"
         ],
         "final_report": report
     }

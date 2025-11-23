@@ -13,6 +13,7 @@ class KQLTemplate(Enum):
     UNIFIED_DIAGNOSTICS = "unified_diagnostics"
     DEPENDENCY_FAILURES = "dependency_failures"
     SQL_ERRORS = "sql_errors"
+    RECENT_CHANGES = "recent_changes"
 
 
 # Templates using placeholders that will be replaced with sanitized and escaped values
@@ -72,6 +73,16 @@ TEMPLATES = {
         | where Category == "SQLErrors" or Category == "Timeouts"
         | project TimeGenerated, error_number_d, Message
         | top 20 by TimeGenerated desc
+    """,
+
+    # NEW: Check for recent Azure Activity (Deployments, Config Changes)
+    KQLTemplate.RECENT_CHANGES: """
+        AzureActivity
+        | where TimeGenerated > ago(2h)
+        | where ResourceId has {resource_name}
+        | where CategoryValue == "Administrative" and ActivityStatusValue == "Success"
+        | project TimeGenerated, Caller, OperationNameValue, ActivitySubstatusValue
+        | top 10 by TimeGenerated desc
     """
 }
 
@@ -123,6 +134,8 @@ def get_template(template_key: str, resource_name: str) -> str:
             key = KQLTemplate.DEPENDENCY_FAILURES
         elif "sql" in template_key.lower():
             key = KQLTemplate.SQL_ERRORS
+        elif "recent" in template_key.lower() or "change" in template_key.lower():
+            key = KQLTemplate.RECENT_CHANGES
         else:
             # Default to Unified Diagnostics for generic "App" requests
             key = KQLTemplate.UNIFIED_DIAGNOSTICS
