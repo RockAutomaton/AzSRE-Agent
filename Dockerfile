@@ -48,17 +48,18 @@ COPY --chown=appuser:appuser pyproject.toml ./
 USER appuser
 
 # Ensure we use the virtual environment
+# Ollama Configuration:
+#   OLLAMA_BASE_URL: Set this to the Ollama container's address (e.g., http://ollama:11434)
+#                    Defaults to http://localhost:11434 if not set
+#   OLLAMA_MODEL_*: Model names for different tasks (see app/core/ollama_config.py for defaults)
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONPATH=/app
+    PYTHONPATH=/app \
+    OLLAMA_BASE_URL=http://localhost:11434
 
 # Expose the port FastAPI runs on
 EXPOSE 8000
-
-# Health check for container orchestration
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:8000/docs || exit 1
 
 # Run the FastAPI application using uvicorn
 # Using --host 0.0.0.0 to bind to all interfaces (required for Docker)

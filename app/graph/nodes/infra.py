@@ -5,9 +5,10 @@ from app.graph.state import AgentState
 from app.tools.monitor import AzureLogTool
 from app.tools.metrics import AzureMetricsTool
 from app.core.kql_templates import get_template
+from app.core.ollama_config import get_ollama_base_url, get_ollama_model_analysis
 
 
-llm = ChatOllama(model="gemma3:27b", temperature=0)
+llm = ChatOllama(model=get_ollama_model_analysis(), temperature=0, base_url=get_ollama_base_url())
 log_tool = AzureLogTool()
 metrics_tool = AzureMetricsTool()
 

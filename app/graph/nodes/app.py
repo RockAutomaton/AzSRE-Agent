@@ -8,10 +8,11 @@ from langchain_core.output_parsers import StrOutputParser
 from app.graph.state import AgentState
 from app.tools.monitor import AzureLogTool
 from app.core.kql_templates import get_template
+from app.core.ollama_config import get_ollama_base_url, get_ollama_model_analysis
 
 
 log_tool = AzureLogTool()
-llm = ChatOllama(model="gemma3:27b", temperature=0)
+llm = ChatOllama(model=get_ollama_model_analysis(), temperature=0, base_url=get_ollama_base_url())
 
 
 # Updated Prompt with Safety Rail for KQL Errors

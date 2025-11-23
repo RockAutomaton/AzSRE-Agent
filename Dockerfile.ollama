@@ -1,0 +1,44 @@
+# Dockerfile for Ollama service with pre-pulled models
+# This container runs Ollama and pre-downloads models during build
+
+FROM ollama/ollama:latest
+
+# Set environment variables for Ollama
+ENV OLLAMA_HOST=0.0.0.0:11434
+
+# Model to pre-pull during build (can be overridden with --build-arg)
+# Default to gemma3:1b, but you can override with: docker build --build-arg OLLAMA_MODEL=gemma3:27b
+ARG OLLAMA_MODEL=gemma3:1b
+ENV OLLAMA_MODEL=${OLLAMA_MODEL}
+
+# Pre-pull the model during build to avoid download latency at runtime
+# Note: This significantly increases image size (~2-4GB per model)
+# Alternative: Mount an Azure File Share to /root/.ollama at runtime
+
+# Install curl for health checks (if not already present)
+RUN which curl > /dev/null || (apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*)
+
+# Start Ollama server in background, wait for it to be ready, then pull model
+# The model files will be persisted in the image filesystem
+RUN ollama serve & \
+    sleep 5 && \
+    for i in 1 2 3 4 5 6 7 8 9 10; do \
+        if curl -f http://localhost:11434/api/tags > /dev/null 2>&1; then \
+            echo "Ollama is ready, pulling model: ${OLLAMA_MODEL}"; \
+            ollama pull ${OLLAMA_MODEL} && \
+            echo "Model pulled successfully"; \
+            pkill ollama || true; \
+            exit 0; \
+        fi; \
+        echo "Waiting for Ollama to start... (attempt $i/10)"; \
+        sleep 2; \
+    done && \
+    echo "Warning: Ollama did not start in time, model may need to be pulled at runtime" && \
+    pkill ollama || true
+
+# Expose Ollama's default port
+EXPOSE 11434
+
+# The base image already has the correct CMD/ENTRYPOINT to run ollama serve
+# No need to override it - it will use the pre-pulled model from the filesystem
+

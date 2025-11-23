@@ -2,10 +2,10 @@ from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from app.graph.state import AgentState
+from app.core.ollama_config import get_ollama_base_url, get_ollama_model_reporter
 
 
-# Use the 4B model for summarization
-llm = ChatOllama(model="qwen3-vl:4b", temperature=0)
+llm = ChatOllama(model=get_ollama_model_reporter(), temperature=0, base_url=get_ollama_base_url())
 
 
 reporter_prompt = ChatPromptTemplate.from_messages([

@@ -15,6 +15,7 @@ from langchain_core.output_parsers import StrOutputParser
 from app.schemas import AzureWebhookPayload
 from app.graph.workflow import build_graph
 from app.graph.state import AgentState
+from app.core.ollama_config import get_ollama_base_url, get_ollama_model_main
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -23,10 +24,13 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="Azure Alert Agent")
 
 # 2. Setup the Local LLM (Ollama)
-# We use the model you selected in the plan: MiniCPM-V or Qwen
+ollama_base_url = get_ollama_base_url()
+ollama_model = get_ollama_model_main()
+logger.info(f"Connecting to Ollama at: {ollama_base_url} with model: {ollama_model}")
 llm = ChatOllama(
-    model="gemma3:27b",
+    model=ollama_model,
     temperature=0,  # Keep it deterministic for alerts
+    base_url=ollama_base_url,
 )
 
 # 3. Initialize the workflow graph

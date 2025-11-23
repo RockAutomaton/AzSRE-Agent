@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  ollama:
+    build:
+      context: .
+      dockerfile: Dockerfile.ollama
+      args:
+        # Override the model to pre-pull during build
+        # Default is gemma3:1b, but you can change it here or via .env
+        OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma3:1b}
+    container_name: azsre-ollama
+    ports:
+      - "11434:11434"
+    # Optional: Uncomment to persist models across container restarts
+    # volumes:
+    #   - ollama-models:/root/.ollama
+    # Or mount an Azure File Share:
+    #   - azure-file-share:/root/.ollama
+    # Uncomment if you want to use GPU acceleration
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: azsre-agent
+    ports:
+      - "8000:8000"
+    environment:
+      # Azure Configuration (required)
+      - AZURE_SUBSCRIPTION_ID=${AZURE_SUBSCRIPTION_ID}
+      - LOG_WORKSPACE_ID=${LOG_WORKSPACE_ID}
+      # Ollama Configuration
+      # Use the service name 'ollama' as the hostname when using docker-compose
+      - OLLAMA_BASE_URL=http://ollama:11434
+      # Model Configuration (optional - uses defaults if not set)
+      - OLLAMA_MODEL_TRIAGE=${OLLAMA_MODEL_TRIAGE:-qwen3-vl:4b}
+      - OLLAMA_MODEL_ANALYSIS=${OLLAMA_MODEL_ANALYSIS:-gemma3:27b}
+      - OLLAMA_MODEL_DATABASE=${OLLAMA_MODEL_DATABASE:-qwen3-vl:4b}
+      - OLLAMA_MODEL_REPORTER=${OLLAMA_MODEL_REPORTER:-qwen3-vl:4b}
+      - OLLAMA_MODEL_MAIN=${OLLAMA_MODEL_MAIN:-gemma3:27b}
+    depends_on:
+      - ollama
+
+# Optional: Uncomment to persist Ollama models
+# volumes:
+#   ollama-models:
+
