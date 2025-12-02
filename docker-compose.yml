@@ -37,6 +37,7 @@ services:
       # Azure Configuration (required)
       - AZURE_SUBSCRIPTION_ID=${AZURE_SUBSCRIPTION_ID}
       - LOG_WORKSPACE_ID=${LOG_WORKSPACE_ID}
+      - AZURE_STORAGE_TABLE_ENDPOINT=${AZURE_STORAGE_TABLE_ENDPOINT}
       # Ollama Configuration
       # Use the service name 'ollama' as the hostname when using docker-compose
       - OLLAMA_BASE_URL=http://ollama:11434

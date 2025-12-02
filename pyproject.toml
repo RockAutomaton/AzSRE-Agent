@@ -8,18 +8,21 @@ dependencies = [
     "azure-identity>=1.25.1",
     "azure-mgmt-monitor>=6.0.0",
     "azure-monitor-query>=2.0.0",
-    "fastapi>=0.121.3",
-    "langchain>=1.0.8",
+    "azure-data-tables>=12.5.0",
+    "fastapi>=0.123.4",
+    "langchain>=1.1.0",
     "langchain-ollama>=1.0.0",
-    "langgraph>=0.2.0",
+    "langgraph>=1.0.4",
     "python-dotenv>=1.0.0",
+    "streamlit>=1.32.0",
+    "pandas>=2.2.0",
     "uvicorn>=0.38.0",
 ]
 
 [dependency-groups]
 dev = [
     "requests>=2.32.5",
-    "ruff>=0.14.6",
+    "ruff>=0.14.7",
     "aiohttp>=3.9.0",
     "opencensus-ext-azure>=1.1.13",
 ]

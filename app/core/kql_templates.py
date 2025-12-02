@@ -13,7 +13,7 @@ class KQLTemplate(Enum):
     UNIFIED_DIAGNOSTICS = "unified_diagnostics"
     DEPENDENCY_FAILURES = "dependency_failures"
     SQL_ERRORS = "sql_errors"
-    RECENT_CHANGES = "recent_changes"
+    RECENT_CHANGES = "recent_changes"  # Kept for backward compatibility
 
 
 # Templates using placeholders that will be replaced with sanitized and escaped values
@@ -21,15 +21,17 @@ TEMPLATES = {
     # Standard Azure Monitor table for Container Apps
     KQLTemplate.CONTAINER_LOGS: """
         ContainerAppConsoleLogs
+        | where TimeGenerated > ago(1h)
         | where ContainerAppName has {resource_name}
         | project TimeGenerated, ContainerAppName, Log_s
         | top 20 by TimeGenerated desc
     """,
     
     # NEW: Modern Unified Telemetry Query (Strict Workspace Schema)
-    # Unions App* tables. 
-    # Note: Time filtering is handled by the API client's 'timespan' parameter, not in KQL.
+    # Fixed 'BadArgumentError' by using physical Workspace columns.
     KQLTemplate.UNIFIED_DIAGNOSTICS: """
+        let StartTime = ago(24h);
+        let EndTime = now();
         union isfuzzy=true 
             (AppRequests | extend Type="Request"),
             (AppExceptions | extend Type="Exception"),
@@ -38,23 +40,18 @@ TEMPLATES = {
             (AppPageViews | extend Type="PageView"),
             (AppAvailabilityResults | extend Type="Availability"),
             (AppEvents | extend Type="Event")
-        | extend 
-            RoleName = column_ifexists("AppRoleName", ""),
-            Msg = coalesce(column_ifexists("OuterMessage", ""), column_ifexists("Message", ""), column_ifexists("Name", "")),
-            ResCode = column_ifexists("ResultCode", ""),
-            Dur = column_ifexists("DurationMs", 0.0),
-            OpId = column_ifexists("OperationId", "")
-        | where RoleName has {resource_name}
+        | where TimeGenerated between (StartTime .. EndTime)
+        | where AppRoleName has {resource_name}
         | order by TimeGenerated desc
         | take 100
-        | project TimeGenerated, Type, Role=RoleName, Message=Msg, ResultCode=ResCode, DurationMs=Dur, OperationId=OpId
+        | project TimeGenerated, Type, AppRoleName, Message=coalesce(OuterMessage, Message, Name), ResultCode, DurationMs, OperationId
     """,
 
     # STRATEGY: Correlation
-    # Strict Workspace schema for joining Requests and Dependencies.
+    # Joins Requests with Dependencies using strict Workspace schema.
     KQLTemplate.DEPENDENCY_FAILURES: """
         AppRequests
-        | where Success == false
+        | where TimeGenerated > ago(24h) and Success == false
         | where AppRoleName has {resource_name}
         | project OperationId, RequestResult = ResultCode, RequestTime = TimeGenerated
         | join kind=inner (
@@ -69,13 +66,14 @@ TEMPLATES = {
     # Azure Diagnostics for SQL (Standard Table)
     KQLTemplate.SQL_ERRORS: """
         AzureDiagnostics
+        | where TimeGenerated > ago(1h)
         | where Resource has {resource_name}
         | where Category == "SQLErrors" or Category == "Timeouts"
         | project TimeGenerated, error_number_d, Message
         | top 20 by TimeGenerated desc
     """,
 
-    # NEW: Check for recent Azure Activity (Deployments, Config Changes)
+    # Recent Azure Activity (Deployments, Config Changes) - Kept for backward compatibility
     KQLTemplate.RECENT_CHANGES: """
         AzureActivity
         | where TimeGenerated > ago(2h)
@@ -128,7 +126,7 @@ def get_template(template_key: str, resource_name: str) -> str:
         key = KQLTemplate(template_key.lower())
     except ValueError:
         # Fallback mapping for old keys or fuzzy matching
-        if "unified" in template_key.lower() or "impact" in template_key.lower():
+        if "unified" in template_key.lower() or "impact" in template_key.lower() or "pattern" in template_key.lower():
             key = KQLTemplate.UNIFIED_DIAGNOSTICS
         elif "depend" in template_key.lower():
             key = KQLTemplate.DEPENDENCY_FAILURES

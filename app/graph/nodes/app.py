@@ -29,7 +29,7 @@ analysis_prompt = ChatPromptTemplate.from_messages([
        - High DistinctOps = Systemic Failure across many transactions.
        - High RawCount but Low DistinctOps = Retry Loop / Localized to few transactions.
     
-    2. INTELLIGENT PATTERN RECOGNITION: Machine learning analysis of failed requests segments.
+    2. PATTERN ANALYSIS: Analysis of failed requests and common patterns.
        - Look for specific segments (e.g., "Browser=Chrome", "City=London").
        
     3. DEPENDENCY FAILURES: Downstream causes.
@@ -83,7 +83,7 @@ async def app_node(state: AgentState) -> AgentState:
     # 1. Impact Analysis (Signal vs Noise)
     q1 = get_template("app_impact_analysis", resource_name)
     
-    # 2. ML Pattern Matching (Autocluster)
+    # 2. Pattern Analysis (Failed Request Patterns)
     q2 = get_template("app_patterns", resource_name)
     
     # 3. Dependency Correlation (Root Cause)
@@ -137,7 +137,7 @@ async def app_node(state: AgentState) -> AgentState:
     === SECTION 1: IMPACT ANALYSIS (Exceptions by Operation Breadth) ===
     {results_impact}
     
-    === SECTION 2: INTELLIGENT PATTERN RECOGNITION (ML Autocluster) ===
+    === SECTION 2: PATTERN ANALYSIS (Failed Request Patterns) ===
     {results_patterns}
     
     === SECTION 3: DEPENDENCY FAILURES (Downstream Correlation) ===
@@ -157,7 +157,7 @@ async def app_node(state: AgentState) -> AgentState:
     return {
         "investigation_steps": state["investigation_steps"] + [
             "Ran Impact Analysis (ProblemId grouping)",
-            "Ran Intelligent Pattern Recognition",
+            "Ran Pattern Analysis",
             "Checked Dependency Failures",
             "Checked Recent Configuration Changes"
         ],
