@@ -1,12 +1,12 @@
-# Setup Guide
+## Setup Guide
 
-This guide will help you set up the Azure SRE Agent for local development and testing.
+This guide will help you set up the Azure SRE Agent for local development, Docker-based testing, and frontend usage.
 
 ## Prerequisites
 
-### 1. Python 3.13+
+### 1. Python 3.11+ (Backend)
 
-The project requires Python 3.13 or higher (as specified in `pyproject.toml`). Verify your Python version:
+The project requires Python 3.11+ (or the version specified in `pyproject.toml`). Verify your Python version:
 
 ```bash
 python --version
@@ -16,7 +16,29 @@ python3 --version
 
 If you need to install Python 3.13, visit [python.org](https://www.python.org/downloads/) or use a version manager like `pyenv`.
 
-### 2. Azure CLI
+### 2. Node.js (Frontend)
+
+The React/Next.js dashboard lives in the `frontend/` directory.
+
+```bash
+node --version
+npm --version
+```
+
+Install Node.js (LTS recommended) from `https://nodejs.org` if needed.
+
+### 3. Docker (Recommended for local stack)
+
+Docker is the recommended way to run the backend + Ollama + frontend together:
+
+```bash
+docker --version
+docker compose version  # or: docker-compose --version
+```
+
+Install Docker Desktop from `https://www.docker.com/products/docker-desktop` if you don’t have it.
+
+### 4. Azure CLI
 
 Install the Azure CLI and authenticate:
 
@@ -37,7 +59,7 @@ Verify authentication:
 az account show
 ```
 
-### 3. Log Analytics Workspace
+### 5. Log Analytics Workspace
 
 You need access to an Azure Log Analytics Workspace where your Application Insights and other monitoring data is stored.
 
@@ -45,7 +67,7 @@ You need access to an Azure Log Analytics Workspace where your Application Insig
 2. Find your Log Analytics Workspace
 3. Copy the **Workspace ID** (you'll need this for the `LOG_WORKSPACE_ID` environment variable)
 
-### 4. Ollama (Local LLM Server)
+### 6. Ollama (Local LLM Server)
 
 The agent uses Ollama to run local LLM models. Install and start Ollama:
 
@@ -71,21 +93,35 @@ curl http://localhost:11434/api/tags
 
 ## Environment Variables
 
-Create a `.env` file in the project root with the following variables:
+Create a `.env` file in the project root with at least:
 
 ```bash
 # Azure Configuration (Required)
 AZURE_SUBSCRIPTION_ID=your-subscription-id-here
 LOG_WORKSPACE_ID=your-workspace-id-here
+APPLICATIONINSIGHTS_CONNECTION_STRING=your-app-insights-connection-string
 
-# Ollama Configuration (Optional - defaults shown)
-# OLLAMA_BASE_URL=http://localhost:11434
+# Azure Table Storage (Required for history & dashboard)
+# Use your Storage Account table endpoint, e.g.:
+#   https://<your-storage-account>.table.core.windows.net
+AZURE_STORAGE_TABLE_ENDPOINT=https://<your-storage-account>.table.core.windows.net
+
+# Ollama Configuration
+OLLAMA_BASE_URL=http://ollama:11434  # when using docker-compose
+# OLLAMA_BASE_URL=http://localhost:11434  # when running Ollama directly
+
+# Optional model overrides (defaults shown)
 # OLLAMA_MODEL_TRIAGE=qwen3-vl:4b
 # OLLAMA_MODEL_ANALYSIS=gemma3:27b
 # OLLAMA_MODEL_DATABASE=qwen3-vl:4b
 # OLLAMA_MODEL_REPORTER=qwen3-vl:4b
 # OLLAMA_MODEL_MAIN=gemma3:27b
 ```
+
+The Table Storage configuration is used by:
+
+- `app/core/database.py` for connecting to the `AlertHistory` table.
+- `app/main.py` for persisting alert entities and serving `/api/history` and `/api/alerts/{row_key}`.
 
 ### Finding Your Subscription ID
 
@@ -99,7 +135,7 @@ az account show --query id --output tsv
 2. Select your workspace
 3. Under **Properties**, copy the **Workspace ID**
 
-## Installation
+## Installation (Backend)
 
 ### Using `uv` (Recommended)
 
@@ -139,7 +175,25 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-## Running the Local Server
+## Frontend Setup
+
+From the `frontend/` directory:
+
+```bash
+cd frontend
+npm install
+```
+
+To run the Next.js app during development:
+
+```bash
+cd frontend
+npm run dev
+```
+
+This starts the dashboard on `http://localhost:3000`.
+
+## Running the Local Server (Backend without Docker)
 
 ### Start the FastAPI Server
 
@@ -182,17 +236,18 @@ The script will:
 2. Send it to `http://localhost:8000/webhook/azure`
 3. Display the agent's classification and report
 
-## Docker Setup (Optional)
+## Docker Setup (Recommended)
 
-The project includes Docker support for containerized deployment.
+The project includes a `docker-compose.yml` file that sets up the agent, Ollama, and (optionally) the frontend.
 
-### Using Docker Compose (Recommended)
-
-The project includes a `docker-compose.yml` file that sets up both the agent and Ollama services:
+### Using Docker Compose
 
 ```bash
-# Start both services
-docker-compose up -d
+# Build and start the stack
+docker-compose up --build
+
+# Or run in the background
+docker-compose up -d --build
 
 # View logs
 docker-compose logs -f
@@ -202,18 +257,11 @@ docker-compose down
 ```
 
 The Docker Compose setup:
-- Runs the agent on port 8000
-- Runs Ollama on port 11434
-- Configures the agent to connect to Ollama via the service name
-- Mounts environment variables from `.env` file
 
-**Environment Variables for Docker Compose**:
-Create a `.env` file in the project root (same as local setup):
-```bash
-AZURE_SUBSCRIPTION_ID=your-subscription-id
-LOG_WORKSPACE_ID=your-workspace-id
-OLLAMA_BASE_URL=http://ollama:11434
-```
+- Runs the agent on port `8000`.
+- Runs Ollama on port `11434`.
+- Configures the agent to connect to Ollama via the `OLLAMA_BASE_URL` service name.
+- Can be extended to run the frontend container (if configured in `docker-compose.yml`).
 
 ### Using Docker Directly
 

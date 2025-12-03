@@ -228,6 +228,24 @@ KQL queries are taking too long to execute, often due to:
 3. Use `summarize` or `sample` to reduce result size
 4. Check query performance in Azure Portal → Log Analytics
 
+### 10. 403 Forbidden on Table Storage
+
+**Error Message**:
+```text
+Operation returned an invalid status 'Forbidden'
+StatusCode: 403
+```
+
+**Cause**:
+
+The identity used by the agent (your user via `az login`, or a managed identity in Azure) does not have sufficient RBAC permissions on the Storage Account’s Table service.
+
+**Solution**:
+
+1. Ensure the identity has the `Storage Table Data Contributor` role on the Storage Account.
+2. Assign the role via Azure Portal or CLI (see `docs/PERMISSIONS.md` for detailed commands).
+3. Wait a few minutes for RBAC propagation and retry the operation.
+
 ## Simulation and Testing
 
 ### Using the Trigger Script

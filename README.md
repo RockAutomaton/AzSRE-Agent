@@ -1,6 +1,6 @@
-# Azure SRE Agent
+## Azure SRE Agent – An AI-powered incident response bot
 
-An intelligent, automated incident response system that processes Azure Monitor alerts using a multi-agent LangGraph workflow. The agent automatically triages, investigates, and reports on Infrastructure, SQL, and Application anomalies.
+An intelligent, automated incident response system that processes Azure Monitor alerts using a multi-agent LangGraph workflow. The agent automatically triages, investigates, and reports on Infrastructure, SQL/Database, and Application anomalies, and exposes the results through an API and a Next.js dashboard.
 
 ## Overview
 
@@ -11,26 +11,26 @@ The Azure SRE Agent receives Azure Monitor webhook alerts and processes them thr
 3. **Verify**: Confirms alert status before reporting
 4. **Report**: Generates structured incident reports with root cause analysis
 
-## Quick Start
+## Quick Start (Docker)
 
 ```bash
-# 1. Install dependencies
-uv sync
+# 1. Ensure prerequisites are installed
+#    - Docker / Docker Desktop
+#    - Azure CLI (for az login)
 
 # 2. Configure environment variables
-cp .env.example .env  # Edit with your Azure credentials
+cp .env.example .env   # Edit with your Azure subscription and workspace IDs
 
-# 3. Start Ollama and pull models
-ollama serve
-ollama pull qwen3-vl:4b
-ollama pull gemma3:27b
-
-# 4. Run the server
-uvicorn app.main:app --reload
-
-# 5. Test with a mock alert
-python scripts/trigger_alert.py
+# 3. Start the stack (backend + Ollama + frontend)
+docker-compose up --build
 ```
+
+Once running:
+
+- Backend API: `http://localhost:8000`
+- Frontend dashboard: `http://localhost:3000`
+
+For a code-first workflow without Docker, see `docs/SETUP.md`.
 
 ## Documentation
 
@@ -41,31 +41,36 @@ python scripts/trigger_alert.py
 - **[Setup Guide](./docs/SETUP.md)**: Installation and configuration
 - **[Troubleshooting](./docs/TROUBLESHOOTING.md)**: Common errors and solutions
 
-## Features
+## Key Features
 
-- 🤖 **Automated Triage**: LLM-powered alert classification
-- 🔍 **Deep Investigation**: Specialized nodes for different alert types
-- 📊 **Real-time Metrics**: Fetches Azure Monitor metrics (CPU, Memory, DTU, etc.)
-- 📝 **KQL Queries**: Executes sophisticated Log Analytics queries
-- ✅ **Verification**: Prevents false positives by verifying alert status
-- 📋 **Structured Reports**: Generates professional Markdown incident reports
+- **Automated Triage (Infra vs App vs DB)**: LLM-powered alert classification and routing to specialist nodes.
+- **Deep Dive Diagnostics using KQL**: Uses curated KQL templates against Azure Monitor and Application Insights.
+- **Structured Reporting with Root Cause Analysis**: Markdown incident reports with summary, evidence, and recommendations.
+- **Interactive Chat Interface & Dashboard**: Next.js frontend for chatting with the agent and reviewing incident history.
 
-## Requirements
+## Requirements (Core)
 
-- Python 3.13+
+- Python 3.11+ (or the version specified in `pyproject.toml`)
+- Node.js (for the Next.js frontend)
+- Docker (for the recommended local stack)
 - Azure CLI (`az login`)
 - Ollama (local LLM server)
 - Azure Log Analytics Workspace
-- Azure Subscription with Monitor API access
+- Azure Subscription with Monitor and Table Storage access
 
-## Environment Variables
+## Environment Variables (Summary)
 
-Create a `.env` file with:
+Create a `.env` file with at least:
 
 ```bash
 AZURE_SUBSCRIPTION_ID=your-subscription-id
 LOG_WORKSPACE_ID=your-workspace-id
+AZURE_STORAGE_TABLE_ENDPOINT=https://<your-storage-account>.table.core.windows.net
+APPLICATIONINSIGHTS_CONNECTION_STRING=your-app-insights-connection-string
+OLLAMA_BASE_URL=http://ollama:11434  # or http://localhost:11434 for local
 ```
+
+See `docs/SETUP.md` for the full list and explanations.
 
 ## API Endpoints
 
@@ -73,23 +78,23 @@ LOG_WORKSPACE_ID=your-workspace-id
 - `POST /chat`: Simple chat endpoint (for testing)
 - `POST /stream`: Streaming chat endpoint
 
-## Project Structure
+## Project Structure (High Level)
 
-```
-app/
-├── main.py              # FastAPI application
-├── core/                # Authentication and KQL templates
-├── graph/               # LangGraph workflow and nodes
-├── tools/               # Azure Monitor clients
-└── schemas/             # Pydantic models
+```text
+app/          # FastAPI backend, LangGraph workflow, tools, and schemas
+frontend/     # Next.js app for chat interface, history, and analytics
+docs/         # Project documentation (architecture, setup, troubleshooting, etc.)
+scripts/      # Utilities for testing, chaos traffic, and deployment helpers
+IaC/          # Bicep templates for Azure deployment
 ```
 
 ## Technology Stack
 
-- **LangGraph**: Workflow orchestration
-- **LangChain + Ollama**: LLM integration
-- **FastAPI**: REST API framework
-- **Azure Monitor APIs**: Metrics and logs
+- **FastAPI**: Backend API and Azure Monitor webhook endpoint.
+- **LangGraph + LangChain**: Multi-agent workflow and LLM orchestration.
+- **Ollama**: Local LLM runtime.
+- **Next.js**: Frontend dashboard and chat UI.
+- **Azure Monitor & Application Insights**: Metrics, logs, and KQL analytics.
 
 ## License
 

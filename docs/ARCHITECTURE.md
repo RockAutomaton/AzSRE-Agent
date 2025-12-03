@@ -1,23 +1,38 @@
-# Architecture Overview
+## Architecture Overview
 
-## Introduction
+### Introduction
 
-The Azure SRE Agent is a multi-agent system built with **LangGraph** that automatically triages, investigates, and reports on Azure Monitor alerts. The system processes alerts for three main categories: **Infrastructure**, **SQL/Database**, and **Application** anomalies.
+The Azure SRE Agent is a multi-agent system built with **LangGraph** that automatically triages, investigates, and reports on Azure Monitor alerts. The system processes alerts for three main categories: **Infrastructure**, **SQL/Database**, and **Application** anomalies, with a placeholder path for Network investigations.
 
 The agent uses a state machine workflow where each node performs specialized tasks, and the state is passed between nodes to accumulate investigation results and generate a final incident report.
 
 ## System Overview
 
-The agent receives Azure Monitor webhook alerts via a FastAPI endpoint, processes them through a LangGraph workflow, and returns a structured investigation report. The system leverages:
+The agent receives Azure Monitor webhook alerts via a FastAPI endpoint, processes them through a LangGraph workflow, and returns a structured investigation report that is persisted and exposed to a Next.js frontend.
 
-- **LangGraph**: For orchestrating the multi-node workflow
-- **LangChain + Ollama**: For LLM-based classification and analysis
-- **Azure Monitor Query API**: For executing KQL queries against Log Analytics workspaces
-- **Azure Monitor Management API**: For fetching real-time metrics
+At a high level, the flow is:
 
-## Workflow Diagram
+```text
+Azure Monitor Alert Webhook
+  → Triage Node
+  → Specialist Node (Infra / App / DB / Network placeholder)
+  → Verify Node
+  → Reporter Node
+  → Database / Frontend
+```
 
-The following Mermaid diagram illustrates the complete workflow:
+The system leverages:
+
+- **FastAPI**: Azure Monitor webhook, chat endpoints, and API surface for the frontend.
+- **LangGraph**: Orchestrates the multi-node workflow and state transitions.
+- **LangChain + Ollama**: LLM-based classification, diagnostics, and report generation.
+- **Azure Monitor Query API**: Executes KQL queries against Log Analytics workspaces.
+- **Azure Monitor Management API**: Fetches real-time metrics.
+- **Next.js frontend**: Renders chat, incident history, and analytics dashboards.
+
+## Component / Workflow Diagram
+
+The following Mermaid diagram illustrates the end-to-end workflow:
 
 ```mermaid
 graph TD
@@ -262,7 +277,7 @@ All models run via **Ollama** (local LLM server) with `temperature=0` for determ
 
 ## API Endpoints
 
-The FastAPI application (`app/main.py`) exposes the following endpoints:
+The FastAPI application (`app/main.py`) exposes the following endpoints used by Azure Monitor and the frontend:
 
 ### `POST /webhook/azure`
 
