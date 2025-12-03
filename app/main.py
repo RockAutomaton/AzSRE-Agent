@@ -60,6 +60,37 @@ def sanitize_row_key(alert_id: str) -> str:
     
     return sanitized
 
+
+def validate_row_key(row_key: str) -> bool:
+    """
+    Validate row_key against a safe whitelist pattern to prevent OData injection.
+    
+    Args:
+        row_key: The row key to validate
+    
+    Returns:
+        True if the row_key matches the safe pattern, False otherwise
+    """
+    # Safe pattern: only alphanumerics, hyphens, underscores, and dots
+    # This matches the format used in sanitize_row_key and UUID hex patterns
+    safe_pattern = re.compile(r'^[a-zA-Z0-9_\-\.]+$')
+    return bool(safe_pattern.match(row_key))
+
+
+def escape_odata_string(value: str) -> str:
+    """
+    Escape a string value for safe use in OData filter expressions.
+    Per OData rules, single quotes must be doubled.
+    
+    Args:
+        value: The string value to escape
+    
+    Returns:
+        Escaped string safe for OData filter interpolation
+    """
+    # OData string literals: single quotes must be doubled
+    return value.replace("'", "''")
+
 # 1. Initialize the FastAPI App
 app = FastAPI(title="Azure Alert Agent")
 
@@ -210,8 +241,12 @@ def get_pattern_analysis_for_type(alert_type: str, limit=50) -> str:
                     report_data = json.loads(report_json_str)
                 elif isinstance(report_json_str, dict):
                     report_data = report_json_str
-            except:
-                pass
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse ReportJson as JSON: {e}. Alert: {alert.get('RuleName', 'Unknown')}")
+                report_data = {}
+            except TypeError as e:
+                logger.warning(f"Unexpected type for ReportJson: {type(report_json_str)}. Error: {e}. Alert: {alert.get('RuleName', 'Unknown')}")
+                report_data = {}
             
             # Collect data for pattern analysis
             all_summaries.append(summary)
@@ -463,27 +498,56 @@ async def get_history():
 
 # 10. Single Alert Endpoint
 @app.get("/api/alerts/{row_key}")
-async def get_alert(row_key: str):
-    """Fetch a single alert entity by RowKey."""
+async def get_alert(row_key: str, partition_key: str | None = None):
+    """
+    Fetch a single alert entity by RowKey.
+    
+    Args:
+        row_key: The RowKey of the alert entity
+        partition_key: Optional PartitionKey for efficient direct lookup using get_entity.
+                      If provided, uses parameterized access (preferred). If not provided,
+                      validates and safely queries by RowKey.
+    """
     try:
         table_client = get_table_client()
         if not table_client:
             raise HTTPException(status_code=503, detail="Database unavailable")
         
-        # PartitionKey is required for efficient lookup in Table Storage, 
-        # but since we might not know it from the URL, we can query by RowKey 
-        # (less efficient but fine for this scale) or require PartitionKey in URL.
-        # For simplicity in this prototype, we'll scan for the RowKey.
+        # Validate row_key against safe whitelist pattern to prevent injection
+        if not validate_row_key(row_key):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid row_key format. Only alphanumerics, hyphens, underscores, and dots are allowed."
+            )
         
-        # OData filter: RowKey eq 'value'
-        filter_query = f"RowKey eq '{row_key}'"
-        entities = list(table_client.query_entities(filter_query))
+        # Preferred: Use parameterized get_entity if partition_key is provided
+        if partition_key:
+            # Validate partition_key as well
+            if not validate_row_key(partition_key):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid partition_key format. Only alphanumerics, hyphens, underscores, and dots are allowed."
+                )
+            try:
+                entity = table_client.get_entity(partition_key=partition_key, row_key=row_key)
+                return entity
+            except ResourceNotFoundError:
+                raise HTTPException(status_code=404, detail="Alert not found")
+        
+        # Fallback: Use OData filter with proper escaping
+        # Escape single quotes by doubling them per OData rules
+        escaped_row_key = escape_odata_string(row_key)
+        filter_query = f"RowKey eq '{escaped_row_key}'"
+        entities = list(table_client.query_entities(query_filter=filter_query))
         
         if not entities:
             raise HTTPException(status_code=404, detail="Alert not found")
             
         return entities[0]
         
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
     except Exception as e:
         logger.error(f"Error fetching alert {row_key}: {e}")
         raise HTTPException(status_code=500, detail=str(e))

@@ -1,13 +1,15 @@
 'use client';
 
+import { use } from 'react';
 import useSWR from 'swr';
 import { ArrowLeft, CheckCircle, AlertTriangle, Terminal, Shield, Activity } from 'lucide-react';
 import Link from 'next/link';
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
-export default function IncidentDetailPage({ params }: { params: { id: string } }) {
-  const { data: alert, error } = useSWR(`http://localhost:8000/api/alerts/${params.id}`, fetcher);
+export default function IncidentDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
+  const { data: alert, error } = useSWR(`http://localhost:8000/api/alerts/${id}`, fetcher);
 
   if (error) return <div className="p-8 text-red-500 dark:text-red-400">Error loading incident.</div>;
   if (!alert) return <div className="p-8 text-slate-500 dark:text-slate-400">Loading details...</div>;
