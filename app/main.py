@@ -4,6 +4,7 @@ load_dotenv()
 
 import json
 import logging
+import os
 import traceback
 import uuid
 import re
@@ -95,10 +96,10 @@ def escape_odata_string(value: str) -> str:
 app = FastAPI(title="Azure Alert Agent")
 
 # --- CORS Configuration ---
-origins = [
-    "http://localhost:3000",  # Next.js Frontend
-    "http://127.0.0.1:3000",
-]
+# Read CORS origins from environment variable (comma-separated list)
+# Defaults to localhost:3000 for local development
+cors_origins_env = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+origins = [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
 
 app.add_middleware(
     CORSMiddleware,

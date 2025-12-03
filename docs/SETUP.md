@@ -116,6 +116,14 @@ OLLAMA_BASE_URL=http://ollama:11434  # when using docker-compose
 # OLLAMA_MODEL_DATABASE=qwen3-vl:4b
 # OLLAMA_MODEL_REPORTER=qwen3-vl:4b
 # OLLAMA_MODEL_MAIN=gemma3:27b
+
+# CORS Configuration
+# Frontend URL(s) - comma-separated list for multiple origins
+# Defaults to localhost:3000 for local development
+CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+
+# Frontend Configuration (for Next.js)
+NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
 The Table Storage configuration is used by:

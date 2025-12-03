@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { MessageSquare, AlertTriangle, History, Clock, Server, Database, Activity, Shield } from 'lucide-react';
 import useSWR from 'swr';
+import { API_URL } from './lib/config';
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -25,7 +26,7 @@ function getIconForType(type: string) {
 }
 
 export default function Home() {
-  const { data: alerts } = useSWR<AlertEntity[]>('http://localhost:8000/api/history', fetcher);
+  const { data: alerts } = useSWR<AlertEntity[]>(`${API_URL}/api/history`, fetcher);
   const recentAlerts = alerts?.slice(0, 5) || [];
 
   return (

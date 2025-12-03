@@ -17,13 +17,14 @@ import {
 import { format, parseISO, startOfHour, subHours } from 'date-fns';
 import { Activity, PieChart as PieIcon, BarChart3, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
+import { API_URL } from '../lib/config';
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#EF4444'];
 
 export default function AnalyticsPage() {
-  const { data: alerts, error } = useSWR('http://localhost:8000/api/history', fetcher);
+  const { data: alerts, error } = useSWR(`${API_URL}/api/history`, fetcher);
 
   if (error) return <div className="p-8 text-red-500 dark:text-red-400">Failed to load data.</div>;
   if (!alerts) return <div className="p-8 text-slate-500 dark:text-slate-400">Calculating metrics...</div>;

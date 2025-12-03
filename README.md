@@ -68,6 +68,8 @@ LOG_WORKSPACE_ID=your-workspace-id
 AZURE_STORAGE_TABLE_ENDPOINT=https://<your-storage-account>.table.core.windows.net
 APPLICATIONINSIGHTS_CONNECTION_STRING=your-app-insights-connection-string
 OLLAMA_BASE_URL=http://ollama:11434  # or http://localhost:11434 for local
+CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000  # Frontend URL(s)
+NEXT_PUBLIC_API_URL=http://localhost:8000  # Backend API URL for frontend
 ```
 
 See `docs/SETUP.md` for the full list and explanations.

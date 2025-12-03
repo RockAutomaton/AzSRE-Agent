@@ -47,8 +47,25 @@ services:
       - OLLAMA_MODEL_DATABASE=${OLLAMA_MODEL_DATABASE:-qwen3-vl:4b}
       - OLLAMA_MODEL_REPORTER=${OLLAMA_MODEL_REPORTER:-qwen3-vl:4b}
       - OLLAMA_MODEL_MAIN=${OLLAMA_MODEL_MAIN:-gemma3:27b}
+      # CORS Configuration
+      # Frontend URL(s) - comma-separated list for multiple origins
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
     depends_on:
       - ollama
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    container_name: azsre-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    depends_on:
+      - app
 
 # Optional: Uncomment to persist Ollama models
 # volumes:

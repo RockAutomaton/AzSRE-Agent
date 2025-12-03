@@ -13,6 +13,7 @@ import {
   Shield,
   ArrowLeft
 } from 'lucide-react';
+import { API_URL } from '../lib/config';
 
 // Fetcher function for SWR
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
@@ -31,7 +32,7 @@ export default function HistoryPage() {
   
   // Poll API every 5 seconds for real-time feel
   const { data: alerts, error, isLoading } = useSWR<AlertEntity[]>(
-    'http://localhost:8000/api/history', 
+    `${API_URL}/api/history`, 
     fetcher, 
     { refreshInterval: 5000 }
   );

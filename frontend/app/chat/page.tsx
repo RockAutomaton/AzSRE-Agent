@@ -6,6 +6,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import Link from 'next/link';
 import useSWR from 'swr';
+import { API_URL } from '../lib/config';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -30,7 +31,7 @@ export default function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   // Fetch recent alerts for dynamic prompts
-  const { data: alerts } = useSWR<AlertEntity[]>('http://localhost:8000/api/history', fetcher);
+  const { data: alerts } = useSWR<AlertEntity[]>(`${API_URL}/api/history`, fetcher);
   
   // Generate dynamic prompts based on recent alerts
   const suggestedPrompts = useMemo(() => {
@@ -102,7 +103,7 @@ export default function ChatPage() {
     setIsLoading(true);
 
     try {
-      const response = await fetch('http://localhost:8000/stream', {
+      const response = await fetch(`${API_URL}/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: userMsg }),
